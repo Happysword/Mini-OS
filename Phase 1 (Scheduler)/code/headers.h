@@ -13,7 +13,7 @@
 
 typedef short bool;
 #define true 1
-#define false 1
+#define false 0
 
 #define SHKEY 300
 #define processMessagetype 1
@@ -78,6 +78,7 @@ typedef struct processData
     int priority;
     int runningtime;
     int id;
+    int remainingtime;
 }processData;
 
 

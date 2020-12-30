@@ -19,7 +19,7 @@ int main(int argc, char *argv[])
 
     char line[256];
     long unsigned int size = 256;
-    int flag = 1;
+    bool flag = 1;
 
     while (fgets(line, size, pFile))
     {
@@ -29,6 +29,7 @@ int main(int argc, char *argv[])
         processWrapper *process = (processWrapper *)malloc(sizeof(processWrapper));
 
         sscanf(line, "%d%d%d%d", &(process->data.id), &(process->data.arrivaltime), &(process->data.runningtime), &(process->data.priority));
+        process->data.remainingtime = process->data.runningtime;
         if (flag == 1)
         {
             head = process;

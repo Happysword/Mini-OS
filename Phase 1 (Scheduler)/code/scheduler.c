@@ -39,7 +39,7 @@ struct processData pop(Node **head)
 }
 
 // Function to push according to priority
-void push(Node **head, struct processData data)
+void insertSorted(Node **head, struct processData data, bool option)
 {
     Node *start = *head;
 
@@ -48,25 +48,55 @@ void push(Node **head, struct processData data)
 
     // if the current Head has higher priority than inserted
     // Then we make the new element the head
-    if ((*head)->data.priority > temp->data.priority)
-    {
-        temp->next = *head;
-        *head = temp;
-    }
-    // Else we traverse the Linked list until we find the suitable place for the node
-    else
-    {
-        while (start->next != NULL && start->next->data.priority <= temp->data.priority)
+    if(option == 1){
+        if ((*head)->data.priority > temp->data.priority)
         {
-            start = start->next;
+            temp->next = *head;
+            *head = temp;
         }
+        // Else we traverse the Linked list until we find the suitable place for the node
+        else
+        {
+            while (start->next != NULL && start->next->data.priority <= temp->data.priority)
+            {
+                start = start->next;
+            }
 
-        // Found the Position
-        temp->next = start->next;
-        start->next = temp;
+            // Found the Position
+            temp->next = start->next;
+            start->next = temp;
+        }
+    }else{
+        if ((*head)->data.remainingtime > temp->data.remainingtime)
+        {
+            temp->next = *head;
+            *head = temp;
+        }
+        // Else we traverse the Linked list until we find the suitable place for the node
+        else
+        {
+            while (start->next != NULL && start->next->data.remainingtime <= temp->data.remainingtime)
+            {
+                start = start->next;
+            }
+
+            // Found the Position
+            temp->next = start->next;
+            start->next = temp;
+        }
     }
 }
 
+
+void push(Node **tail, struct processData data)
+{
+    // Create new Node
+    Node *temp = newNode(data);
+
+    (*tail)->next = temp;
+    *tail = temp;
+
+}
 // Function to check is list is empty
 int isEmpty(Node **head)
 {
@@ -101,6 +131,7 @@ int main(int argc, char *argv[])
     * 
     */
     Node *head = NULL;
+    Node *tail = NULL;
     int mode = atoi(argv[1]);
     int quantum = atoi(argv[2]);
     struct msgbuff message;
@@ -124,7 +155,7 @@ int main(int argc, char *argv[])
                 else
                 {
 
-                    push(&head, message.data);
+                    insertSorted(&head, message.data, 1);
                 }
 
                 Node *temp = head;
@@ -140,13 +171,58 @@ int main(int argc, char *argv[])
         // 2 - SRTN
         else if (mode == 2)
         {
-            /* code */
+            /* receive the messages from the process_generator */
+            rec_val = msgrcv(msgq_id, &message, sizeof(message.data), processMessagetype, IPC_NOWAIT);
+
+            // if we recieve a message
+            if (rec_val != -1)
+            {
+                if (isEmpty(&head))
+                {
+                    head = newNode(message.data);
+                }
+                else
+                {
+                    insertSorted(&head, message.data, 0);
+                }
+
+                Node *temp = head;
+                while (temp != NULL)
+                {
+                    printf("%d ", temp->data.id);
+                    temp = temp->next;
+                }
+                printf("\n");
+            }
         }
 
         // 3- Round Robin
         else
         {
-            /* code */
+            /* receive the messages from the process_generator */
+            rec_val = msgrcv(msgq_id, &message, sizeof(message.data), processMessagetype, IPC_NOWAIT);
+
+            // if we recieve a message
+            if (rec_val != -1)
+            {
+                if (isEmpty(&head))
+                {
+                    head = newNode(message.data);
+                    tail = head;
+                }
+                else
+                {
+                    push(&tail, message.data);
+                }
+
+                Node *temp = head;
+                while (temp != NULL)
+                {
+                    printf("%d ", temp->data.id);
+                    temp = temp->next;
+                }
+                printf("\n");
+            }
         }
     }
 
