@@ -16,7 +16,7 @@ typedef short bool;
 #define false 1
 
 #define SHKEY 300
-
+#define processMessagetype 1
 
 ///==============================
 //don't mess with this variable//
@@ -65,3 +65,31 @@ void destroyClk(bool terminateAll)
         killpg(getpgrp(), SIGINT);
     }
 }
+
+
+/*
+ * Global Structs for All the Files
+ *
+*/
+
+typedef struct processData
+{
+    int arrivaltime;
+    int priority;
+    int runningtime;
+    int id;
+}processData;
+
+
+typedef struct processWrapper
+{
+    processData data;
+    struct processWrapper *next;
+} processWrapper;
+
+
+typedef struct msgbuff
+{
+    long mtype;
+    processData data;
+}msgbuff;
