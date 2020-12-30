@@ -9,6 +9,7 @@
 #include <sys/shm.h>
 #include <ctype.h>
 #include <sys/sem.h>
+#include <sys/msg.h>
 
 /* arg for semctl system calls. */
 union Semun
@@ -143,6 +144,7 @@ void* AttachSharedMemory(int shmid)
         perror("Error in attach in client");
         exit(-1);
     }
+    return shmaddr;
 }
 
 int CreateSemaphore(int value,char identifier)
