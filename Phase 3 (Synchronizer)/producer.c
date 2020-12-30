@@ -27,7 +27,7 @@ struct msgbuff
     char mtext[70];
 };
 
-int bufferSize = 5; // Should be read from the user
+int bufferSize = 2; // Should be read from the user
 
 int CreateSharedMemory(int bufferSize,char identifier);
 void* AttachSharedMemory(int shmid);
@@ -49,26 +49,26 @@ void main()
     int* shmaddr_number_of_elements = AttachSharedMemory(shmid_number_of_elements);
 
     int sem1 = CreateSemaphore(1,'1');
+    int sem2 = CreateSemaphore(1,'2');
 
     int msgq_id = CreateMessageQueue('m');    
 
     while (1)
     {
+        down(sem2);
         // If buffer empty
         if (*shmaddr_number_of_elements == 0)
         {
             printf("\nfirst condition1\n");
 
-
-            down(sem1);
             ProduceItem(shmaddr_buffer,shmaddr_number_of_elements);
-            up(sem1);
 
             struct msgbuff message;
 
             message.mtype = 'p'; /* arbitrary value */
             strcpy(message.mtext, "produced");
 
+            printf("\nfirst middle condition1\n");
             int send_val = msgsnd(msgq_id, &message, sizeof(message.mtext), !IPC_NOWAIT);
 
             if (send_val == -1)
@@ -76,7 +76,9 @@ void main()
 
             printf("\nfirst condition2\n");
         }
+        up(sem2);
 
+        down(sem2);
         if (*shmaddr_number_of_elements == bufferSize)
         {
             printf("\nsecond condition1\n");
@@ -85,6 +87,7 @@ void main()
 
             message.mtype = 'c'; /* arbitrary value */
 
+            up(sem2);
             int rec_val = msgrcv(msgq_id, &message, sizeof(message.mtext), message.mtype, !IPC_NOWAIT);
 
             if (rec_val == -1)
@@ -93,17 +96,21 @@ void main()
             printf("\nsecond condition2\n");
 
         }
-
+        else
+        {
+            up(sem2);
+        }
+        
+        down(sem2);
         if(*shmaddr_number_of_elements != 0 && *shmaddr_number_of_elements != bufferSize)
         {
             printf("\nthird condition 1\n");
 
-            down(sem1);
             ProduceItem(shmaddr_buffer,shmaddr_number_of_elements);
-            up(sem1);
 
             printf("\nthird condition 2\n");
         }
+        up(sem2);
         
     }
     
