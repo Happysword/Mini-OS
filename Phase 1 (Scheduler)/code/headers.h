@@ -94,3 +94,9 @@ typedef struct msgbuff
     long mtype;
     processData data;
 }msgbuff;
+
+typedef struct msgrembuff
+{
+    long mtype;
+    int data;
+}msgrembuff;

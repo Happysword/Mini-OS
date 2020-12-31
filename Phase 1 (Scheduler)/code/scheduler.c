@@ -1,5 +1,11 @@
 #include "headers.h"
 
+bool RunningFlag = false;
+
+void handlerChildTermination(int sigNum){
+    RunningFlag = false;
+    printf("Process ended at time: %d\n", getClk());
+}
 /*****************************
  *****************************
  *      Priority Queue
@@ -14,6 +20,7 @@ typedef struct Node
 
     struct processData data;
     struct Node *next;
+    int pid;
 
 } Node;
 
@@ -23,19 +30,17 @@ Node *newNode(struct processData data)
     Node *temp = (Node *)malloc(sizeof(Node));
     temp->data = data;
     temp->next = NULL;
-
+    temp->pid = -1;
     return temp;
 }
 
 // Return the value at head
 // And removes it from Queue
-struct processData pop(Node **head)
+Node* pop(Node **head)
 {
     Node *temp = *head;
     *head = (*head)->next;
-    processData tempdata = temp->data;
-    free(temp);
-    return tempdata;
+    return temp;
 }
 
 // Function to push according to priority
@@ -97,6 +102,7 @@ void push(Node **tail, struct processData data)
     *tail = temp;
 
 }
+
 // Function to check is list is empty
 int isEmpty(Node **head)
 {
@@ -109,14 +115,19 @@ int main(int argc, char *argv[])
 {
     initClk();
 
+    signal(SIGUSR1, handlerChildTermination);
+
     // Create the Message queue that we recieve processes on
-    key_t key_id;
-    int msgq_id;
+    key_t key_id, key_id2;
+    int msgq_id, msgq_id2;
 
     key_id = ftok("keyfile", 1);                //create unique key for Sending the processes
     msgq_id = msgget(key_id, 0666 | IPC_CREAT); //create message queue and return id
 
-    if (msgq_id == -1)
+    key_id2 = ftok("keyfile", 10);                //create unique key for Sending the processes
+    msgq_id2 = msgget(key_id2, 0666 | IPC_CREAT); //create message queue and return id
+
+    if (msgq_id == -1 || msgq_id2 == -1)
     {
         perror("Error in create");
         exit(-1);
@@ -132,10 +143,14 @@ int main(int argc, char *argv[])
     */
     Node *head = NULL;
     Node *tail = NULL;
+    Node *current;
     int mode = atoi(argv[1]);
     int quantum = atoi(argv[2]);
     struct msgbuff message;
-    int rec_val;
+    msgrembuff msgrem;
+    int rec_val, rem_time;
+    int clk = getClk();
+
     while (1)
     {
 
@@ -157,15 +172,32 @@ int main(int argc, char *argv[])
 
                     insertSorted(&head, message.data, 1);
                 }
-
-                Node *temp = head;
-                while (temp != NULL)
-                {
-                    printf("%d ", temp->data.id);
-                    temp = temp->next;
-                }
-                printf("\n");
             }
+
+            if(!RunningFlag && !isEmpty(&head)){
+                printf("before POP\n");
+                Node* toRun = pop(&head);
+                printf("Process %d started at time: %d\n", toRun->data.id, getClk());
+                int pid = fork();
+                if(pid == 0){
+                    char remchar [5];
+                    sprintf(remchar, "%d", toRun->data.remainingtime);
+                    char *path[] = {"./process.out", remchar, NULL};
+                    execv(path[0], path);
+                } else{
+                    toRun->pid = pid;
+                }
+                RunningFlag = true;
+            }
+
+            /*Node *temp = head;
+            while (temp != NULL)
+            {
+                printf("%d ", temp->data.id);
+                temp = temp->next;
+            }
+            printf("\n");
+            */
         }
 
         // 2 - SRTN
@@ -215,13 +247,24 @@ int main(int argc, char *argv[])
                     push(&tail, message.data);
                 }
 
-                Node *temp = head;
+                /*Node *temp = head;
                 while (temp != NULL)
                 {
                     printf("%d ", temp->data.id);
                     temp = temp->next;
                 }
-                printf("\n");
+                printf("\n");*/
+            }
+            int now = getClk();
+            if(!RunningFlag || (now - clk) == quantum){
+                if(RunningFlag){
+                    kill(current->pid, SIGSTOP);
+                    rem_time = msgrcv(msgq_id2, &msgrem, sizeof(msgrem.data), 0, !IPC_NOWAIT);
+                    current->data.remainingtime = msgrem.data;
+                    push(&tail, current->data);
+                }else{
+
+                }
             }
         }
     }
@@ -229,3 +272,4 @@ int main(int argc, char *argv[])
     //upon termination release the clock resources.
     destroyClk(true);
 }
+
