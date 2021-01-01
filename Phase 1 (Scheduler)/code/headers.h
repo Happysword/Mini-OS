@@ -79,6 +79,7 @@ typedef struct processData
     int runningtime;
     int id;
     int remainingtime;
+    bool is_running;
 }processData;
 
 

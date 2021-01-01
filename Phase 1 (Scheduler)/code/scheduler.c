@@ -2,7 +2,8 @@
 
 bool RunningFlag = false;
 
-void handlerChildTermination(int sigNum){
+void handlerChildTermination(int sigNum)
+{
     RunningFlag = false;
     printf("Process ended at time: %d\n", getClk());
 }
@@ -34,26 +35,28 @@ Node *newNode(struct processData data)
     return temp;
 }
 
-// Return the value at head
-// And removes it from Queue
-Node* pop(Node **head)
+
+struct Node pop(Node **head)
 {
     Node *temp = *head;
     *head = (*head)->next;
-    return temp;
+    Node tempnode = *temp;
+    free(temp);
+    return tempnode;
 }
 
 // Function to push according to priority
-void insertSorted(Node **head, struct processData data, bool option)
+void insertSorted(Node **head, Node *data, bool option)
 {
     Node *start = *head;
 
     // Create new Node
-    Node *temp = newNode(data);
+    Node *temp = data;
 
     // if the current Head has higher priority than inserted
     // Then we make the new element the head
-    if(option == 1){
+    if (option == 1)
+    {
         if ((*head)->data.priority > temp->data.priority)
         {
             temp->next = *head;
@@ -71,7 +74,9 @@ void insertSorted(Node **head, struct processData data, bool option)
             temp->next = start->next;
             start->next = temp;
         }
-    }else{
+    }
+    else
+    {
         if ((*head)->data.remainingtime > temp->data.remainingtime)
         {
             temp->next = *head;
@@ -92,15 +97,13 @@ void insertSorted(Node **head, struct processData data, bool option)
     }
 }
 
-
-void push(Node **tail, struct processData data)
+void push(Node **tail, Node *data)
 {
     // Create new Node
-    Node *temp = newNode(data);
+    Node *temp = data;
 
     (*tail)->next = temp;
     *tail = temp;
-
 }
 
 // Function to check is list is empty
@@ -140,10 +143,11 @@ int main(int argc, char *argv[])
     * 
     * Main Scheduler loop
     * 
+    * 
     */
     Node *head = NULL;
     Node *tail = NULL;
-    Node *current;
+    Node *currentProcess;
     int mode = atoi(argv[1]);
     int quantum = atoi(argv[2]);
     struct msgbuff message;
@@ -169,23 +173,28 @@ int main(int argc, char *argv[])
                 }
                 else
                 {
-
-                    insertSorted(&head, message.data, 1);
+                    Node *temp = newNode(message.data);
+                    insertSorted(&head, temp, 1);
                 }
             }
 
-            if(!RunningFlag && !isEmpty(&head)){
-                printf("before POP\n");
-                Node* toRun = pop(&head);
-                printf("Process %d started at time: %d\n", toRun->data.id, getClk());
+            if (!RunningFlag && !isEmpty(&head))
+            {
+                struct Node tempnode = pop(&head);
+                currentProcess = newNode(tempnode.data);
+                currentProcess->pid = tempnode.pid;
+                printf("Process %d started at time: %d\n", currentProcess->data.id, getClk());
                 int pid = fork();
-                if(pid == 0){
-                    char remchar [5];
-                    sprintf(remchar, "%d", toRun->data.remainingtime);
+                if (pid == 0)
+                {
+                    char remchar[5];
+                    sprintf(remchar, "%d", currentProcess->data.remainingtime);
                     char *path[] = {"./process.out", remchar, NULL};
                     execv(path[0], path);
-                } else{
-                    toRun->pid = pid;
+                }
+                else
+                {
+                    currentProcess->pid = pid;
                 }
                 RunningFlag = true;
             }
@@ -215,7 +224,8 @@ int main(int argc, char *argv[])
                 }
                 else
                 {
-                    insertSorted(&head, message.data, 0);
+                    Node *temp = newNode(message.data);
+                    insertSorted(&head, temp, 0);
                 }
 
                 Node *temp = head;
@@ -244,32 +254,78 @@ int main(int argc, char *argv[])
                 }
                 else
                 {
-                    push(&tail, message.data);
+                    Node *temp = newNode(message.data);
+                    // printf("Process %d arrived at time: %d\n", temp->data.id, getClk());
+                    push(&tail, temp);
                 }
 
-                /*Node *temp = head;
-                while (temp != NULL)
+                // Node *temp = head;
+                // while (temp != NULL)
+                // {
+                //     printf("%d ", temp->data.id);
+                //     temp = temp->next;
+                // }
+                // printf("\n");
+            }
+
+            int now = getClk();  
+            if (!RunningFlag || (now - clk) == quantum)
+            {
+                if (RunningFlag)
                 {
-                    printf("%d ", temp->data.id);
-                    temp = temp->next;
-                }
-                printf("\n");*/
-            }
-            int now = getClk();
-            if(!RunningFlag || (now - clk) == quantum){
-                if(RunningFlag){
-                    kill(current->pid, SIGSTOP);
+                    // printf("Current Processes ID: %d\n",currentProcess->pid);
+                    kill(currentProcess->pid, SIGUSR1);
                     rem_time = msgrcv(msgq_id2, &msgrem, sizeof(msgrem.data), 0, !IPC_NOWAIT);
-                    current->data.remainingtime = msgrem.data;
-                    push(&tail, current->data);
-                }else{
+                    currentProcess->data.remainingtime = msgrem.data;
+                    Node *temp = newNode(currentProcess->data);
+                    temp->pid = currentProcess->pid;
+                    push(&tail, temp);
 
+
+                    // temp = head;
+                    // while (temp != NULL)
+                    // {
+                    //     printf("%d ", temp->data.id);
+                    //     temp = temp->next;
+                    // }
+                    // printf("\n");
                 }
+
+                if (!isEmpty(&head))
+                {
+
+                    struct Node tempnode = pop(&head);
+                    currentProcess = newNode(tempnode.data);
+                    currentProcess->pid = tempnode.pid;
+                    if (currentProcess->data.is_running == true)
+                    {
+                        kill(currentProcess->pid,SIGUSR2);
+                        printf("Process %d resumed at time: %d\n", currentProcess->data.id, getClk());
+                    }
+                    else
+                    {
+                        currentProcess->data.is_running = true;
+                        printf("Process %d started at time: %d\n", currentProcess->data.id, getClk());
+                        int pid = fork();
+                        if (pid == 0)
+                        {
+                            char remchar[5];
+                            sprintf(remchar, "%d", currentProcess->data.remainingtime);
+                            char *path[] = {"./process.out", remchar, NULL};
+                            execv(path[0], path);
+                        }
+                        else
+                        {
+                            currentProcess->pid = pid;
+                        }
+                    }
+                    RunningFlag = true;
+                }
+                clk = getClk();
             }
-        }
+           }
     }
 
     //upon termination release the clock resources.
     destroyClk(true);
 }
-

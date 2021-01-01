@@ -4,9 +4,14 @@
 /* Modify this file as needed*/
 int remainingtime;
 int msgq_id;
+bool sleep_flag = false;
 
 //void handlerTermination(int sigNum);
 void handlerSleep(int sigNum);
+void handlerWake(int signum);
+
+//Clock variables
+int clk, now;
 
 int main(int agrc, char * argv[])
 {
@@ -23,22 +28,24 @@ int main(int agrc, char * argv[])
         exit(-1);
     }
 
-    signal(SIGSTOP,handlerSleep);
-    
+    signal(SIGUSR1,handlerSleep);
+    signal(SIGUSR2,handlerWake);
     //TODO it needs to get the remaining time from somewhere
-    printf("In process\n");
+    
     remainingtime = atoi(argv[1]);
-    int clk = getClk(); 
-    int now;
+    clk = getClk(); 
     while (remainingtime > 0)
     {
+        while(sleep_flag)
+            sleep(1);
         now = getClk();
         if(now - clk == 1){
             remainingtime -= 1;
             clk = now; 
-            //printf("Clk: %d remainingTime: %d\n",clk,remainingtime);
+            printf("Process: %d remainingTime: %d\n",getpid(),remainingtime);
         }
     }
+    printf("Inside Process: Process Finished\n");
     kill(getppid(),SIGUSR1);
     destroyClk(false);
     
@@ -49,8 +56,16 @@ void handlerSleep(int sigNum){
     msgrembuff msg;
     msg.mtype = 1;
     msg.data = remainingtime;
+    // printf("Inside Sleep handler\n");
     if(msgsnd(msgq_id, &msg, sizeof(msg.data), !IPC_NOWAIT) == -1){
         perror("Errror in send");
     }
-    pause();
+    sleep_flag= true;
+}
+
+void handlerWake(int signum)
+{
+    sleep_flag = false;
+    clk = getClk();
+    // printf("inside wake hanlder\n");
 }

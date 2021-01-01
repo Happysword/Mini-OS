@@ -30,6 +30,7 @@ int main(int argc, char *argv[])
 
         sscanf(line, "%d%d%d%d", &(process->data.id), &(process->data.arrivaltime), &(process->data.runningtime), &(process->data.priority));
         process->data.remainingtime = process->data.runningtime;
+        process->data.is_running = false;
         if (flag == 1)
         {
             head = process;
