@@ -48,7 +48,6 @@ void main()
     int shmid_number_of_elements = CreateSharedMemory(sizeof(int),'n');
     int* shmaddr_number_of_elements = AttachSharedMemory(shmid_number_of_elements);
 
-    int sem1 = GetSemaphore('1');
     int sem2 = GetSemaphore('2');
 
     int msgq_id = CreateMessageQueue('m');    

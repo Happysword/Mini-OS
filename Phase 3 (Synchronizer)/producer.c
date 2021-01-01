@@ -10,6 +10,7 @@
 #include <ctype.h>
 #include <sys/sem.h>
 #include <sys/msg.h>
+#include <signal.h>
 
 /* arg for semctl system calls. */
 union Semun
@@ -36,22 +37,29 @@ int CreateMessageQueue(char identifier);
 void ProduceItem(int* shmaddr_buffer,int* shmaddr_number_of_elements);
 void up(int sem);
 void down(int sem);
+void handler(int signum);
 
+int shmid_buffer;
+int shmid_number_of_elements;
+int sem2;
+int msgq_id;
 // Assume Producer starts first for initializtion ?????
 void main()
 {
-    // Create(get) shared memory for buffer
-    int shmid_buffer = CreateSharedMemory(bufferSize,'b');
+    signal(SIGINT, handler);
+
+    shmid_buffer = CreateSharedMemory(bufferSize,'b');
     int* shmaddr_buffer = AttachSharedMemory(shmid_buffer);
 
+    // Create(get) shared memory for buffer
+
     // Create(get) shared memory for number of elements
-    int shmid_number_of_elements = CreateSharedMemory(sizeof(int),'n');
+    shmid_number_of_elements = CreateSharedMemory(sizeof(int),'n');
     int* shmaddr_number_of_elements = AttachSharedMemory(shmid_number_of_elements);
 
-    int sem1 = CreateSemaphore(1,'1');
-    int sem2 = CreateSemaphore(1,'2');
+    sem2 = CreateSemaphore(1,'2');
 
-    int msgq_id = CreateMessageQueue('m');    
+    msgq_id = CreateMessageQueue('m');    
 
     while (1)
     {
@@ -232,4 +240,14 @@ void up(int sem)
         perror("Error in up()");
         exit(-1);
     }
+}
+
+void handler(int signum)
+{
+   msgctl(msgq_id, IPC_RMID, (struct msqid_ds *)0); 
+   shmctl(shmid_buffer, IPC_RMID, (struct shmid_ds *)0);
+   shmctl(shmid_number_of_elements, IPC_RMID, (struct shmid_ds *)0);
+   semctl(sem2,0,IPC_RMID,NULL);
+
+   exit(0);
 }
