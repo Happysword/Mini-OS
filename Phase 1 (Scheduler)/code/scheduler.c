@@ -1,12 +1,6 @@
 #include "headers.h"
 
-bool RunningFlag = false;
 
-void handlerChildTermination(int sigNum)
-{
-    RunningFlag = false;
-    printf("Process ended at time: %d\n", getClk());
-}
 /*****************************
  *****************************
  *      Priority Queue
@@ -112,6 +106,18 @@ int isEmpty(Node **head)
     return (*head) == NULL;
 }
 
+
+bool RunningFlag = false;
+Node *currentProcess;
+
+void handlerChildTermination(int sigNum)
+{
+    RunningFlag = false;
+    free(currentProcess);
+    currentProcess = NULL;
+    printf("Process ended at time: %d\n", getClk());
+}
+
 /**********************************************************MAIN************************************************************************************/
 
 int main(int argc, char *argv[])
@@ -147,14 +153,14 @@ int main(int argc, char *argv[])
     */
     Node *head = NULL;
     Node *tail = NULL;
-    Node *currentProcess;
+    
     int mode = atoi(argv[1]);
     int quantum = atoi(argv[2]);
     struct msgbuff message;
     msgrembuff msgrem;
     int rec_val, rem_time;
     int clk = getClk();
-
+    int clk2 = getClk();
     while (1)
     {
 
@@ -268,19 +274,52 @@ int main(int argc, char *argv[])
                 // printf("\n");
             }
 
-            int now = getClk();  
+            int now = getClk();
+            if((now - clk2) == 1){
+                if(currentProcess != NULL)
+                {
+                    //printf("in clk\n");
+                    msgrem.mtype = 2;
+                    currentProcess->data.remainingtime -= 1;
+                    msgrem.data = currentProcess->data.remainingtime; 
+                    printf("remaining: %d\n",currentProcess->data.remainingtime); 
+                    if(msgsnd(msgq_id, &msgrem, sizeof(msgrem.data), !IPC_NOWAIT) == -1){
+                        perror("Errror in send");
+                    }
+                }
+                clk2 = now;
+            }
+            now = getClk();
             if (!RunningFlag || (now - clk) == quantum)
             {
+                if((now - clk) == quantum)
+                {
+                    Node* temp = head;
+                    while (temp != NULL)
+                    {
+                        printf("%d ", temp->data.id);
+                        temp = temp->next;
+                    }
+                    printf("\n");
+                }
                 if (RunningFlag)
                 {
                     // printf("Current Processes ID: %d\n",currentProcess->pid);
+                    usleep(10);
+                    printf("Waiting...\n");
                     kill(currentProcess->pid, SIGUSR1);
-                    rem_time = msgrcv(msgq_id2, &msgrem, sizeof(msgrem.data), 0, !IPC_NOWAIT);
+                    rem_time = msgrcv(msgq_id2, &msgrem, sizeof(msgrem.data), 1, !IPC_NOWAIT);
                     currentProcess->data.remainingtime = msgrem.data;
                     Node *temp = newNode(currentProcess->data);
                     temp->pid = currentProcess->pid;
-                    push(&tail, temp);
-
+                    if (isEmpty(&head))
+                    {
+                        head = temp;
+                        tail = head;
+                    } else{
+                        push(&tail, temp);
+                    }
+                    RunningFlag = false;
 
                     // temp = head;
                     // while (temp != NULL)
@@ -295,11 +334,13 @@ int main(int argc, char *argv[])
                 {
 
                     struct Node tempnode = pop(&head);
+                    if(isEmpty(&head)) tail = NULL;
                     currentProcess = newNode(tempnode.data);
                     currentProcess->pid = tempnode.pid;
                     if (currentProcess->data.is_running == true)
                     {
-                        kill(currentProcess->pid,SIGUSR2);
+                        kill(currentProcess->pid,SIGCONT);
+                        printf("Current process pid = %d \n", currentProcess->pid);
                         printf("Process %d resumed at time: %d\n", currentProcess->data.id, getClk());
                     }
                     else
@@ -323,7 +364,8 @@ int main(int argc, char *argv[])
                 }
                 clk = getClk();
             }
-           }
+            
+        }
     }
 
     //upon termination release the clock resources.

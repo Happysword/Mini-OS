@@ -55,7 +55,7 @@ int main(int argc, char *argv[])
 
     if (mode == 3)
     {
-        printf("Enter Quantum: \n");
+        printf("Enter Quantum: ");
         scanf("%d", &quantum);
     }
 
