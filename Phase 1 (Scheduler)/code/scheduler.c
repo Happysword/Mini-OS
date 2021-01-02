@@ -1,5 +1,6 @@
 #include "headers.h"
 
+int timePassed = 0;
 
 /*****************************
  *****************************
@@ -113,6 +114,7 @@ Node *currentProcess;
 void handlerChildTermination(int sigNum)
 {
     RunningFlag = false;
+    timePassed = 0;
     free(currentProcess);
     currentProcess = NULL;
     printf("Process ended at time: %d\n", getClk());
@@ -161,9 +163,25 @@ int main(int argc, char *argv[])
     int rec_val, rem_time;
     int clk = getClk();
     int clk2 = getClk();
+    
     while (1)
     {
-
+        int now = getClk();
+        if((now - clk2) == 1){
+            if(currentProcess != NULL)
+            {
+                //printf("in clk\n");
+                msgrem.mtype = 2;
+                currentProcess->data.remainingtime -= 1;
+                msgrem.data = currentProcess->data.remainingtime; 
+                //printf("remaining: %d\n",currentProcess->data.remainingtime); 
+                if(msgsnd(msgq_id2, &msgrem, sizeof(msgrem.data), !IPC_NOWAIT) == -1){
+                    perror("Errror in send");
+                }
+            }
+            clk2 = now;
+            timePassed ++;
+        }
         // 1 - Highest Priority first
         if (mode == 1)
         {
@@ -274,25 +292,9 @@ int main(int argc, char *argv[])
                 // printf("\n");
             }
 
-            int now = getClk();
-            if((now - clk2) == 1){
-                if(currentProcess != NULL)
-                {
-                    //printf("in clk\n");
-                    msgrem.mtype = 2;
-                    currentProcess->data.remainingtime -= 1;
-                    msgrem.data = currentProcess->data.remainingtime; 
-                    printf("remaining: %d\n",currentProcess->data.remainingtime); 
-                    if(msgsnd(msgq_id, &msgrem, sizeof(msgrem.data), !IPC_NOWAIT) == -1){
-                        perror("Errror in send");
-                    }
-                }
-                clk2 = now;
-            }
-            now = getClk();
-            if (!RunningFlag || (now - clk) == quantum)
+            if (!RunningFlag || timePassed == quantum)
             {
-                if((now - clk) == quantum)
+                /*if(timePassed == quantum)
                 {
                     Node* temp = head;
                     while (temp != NULL)
@@ -301,12 +303,12 @@ int main(int argc, char *argv[])
                         temp = temp->next;
                     }
                     printf("\n");
-                }
+                }*/
                 if (RunningFlag)
                 {
                     // printf("Current Processes ID: %d\n",currentProcess->pid);
-                    usleep(10);
-                    printf("Waiting...\n");
+                    //usleep(10);
+                    //printf("Waiting...\n");
                     kill(currentProcess->pid, SIGUSR1);
                     rem_time = msgrcv(msgq_id2, &msgrem, sizeof(msgrem.data), 1, !IPC_NOWAIT);
                     currentProcess->data.remainingtime = msgrem.data;
@@ -339,9 +341,9 @@ int main(int argc, char *argv[])
                     currentProcess->pid = tempnode.pid;
                     if (currentProcess->data.is_running == true)
                     {
-                        kill(currentProcess->pid,SIGCONT);
                         printf("Current process pid = %d \n", currentProcess->pid);
                         printf("Process %d resumed at time: %d\n", currentProcess->data.id, getClk());
+                        kill(currentProcess->pid,SIGCONT);
                     }
                     else
                     {
@@ -362,7 +364,7 @@ int main(int argc, char *argv[])
                     }
                     RunningFlag = true;
                 }
-                clk = getClk();
+                timePassed = 0;
             }
             
         }
