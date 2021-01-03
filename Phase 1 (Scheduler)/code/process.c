@@ -40,7 +40,7 @@ int main(int agrc, char * argv[])
     {
         msgrcv(msgq_id, &msg2, sizeof(msg2.data), 2, !IPC_NOWAIT);
         remainingtime = msg2.data;
-        printf("Process: %d remainingTime: %d\n",getpid(),remainingtime);
+        // printf("Process: %d remainingTime: %d\n",getpid(),remainingtime);
         /*while(sleep_flag)
             sleep(1);*/
         /*now = getClk();
@@ -66,6 +66,7 @@ void handlerSleep(int sigNum){
         printf("Process: %d remainingTime: %d\n",getpid(),remainingtime);
     }*/
     msg.data = remainingtime;
+    printf("Process: %d remainingTime: %d\n",getpid(),remainingtime);
     // printf("Inside Sleep handler\n");
     if(msgsnd(msgq_id, &msg, sizeof(msg.data), !IPC_NOWAIT) == -1){
         perror("Errror in send");
@@ -78,7 +79,7 @@ void handlerSleep(int sigNum){
         exit(0);
     }*/
     raise(SIGSTOP);
-    printf("Awaked\n");
+    //printf("Awaked\n");
     clk = getClk();
 }
 

@@ -304,16 +304,18 @@ int main(int argc, char *argv[])
                     }
                     printf("\n");
                 }*/
+                usleep(10); // Because when the remaining time in the process reaches zero the running flag is set to false
+                            // and the current process is set to null But the scheduler is faster so it enters the if condition first 
+                            // with running flag set to true and after it enters the handler then is called and sets the current process
+                            // to Null and the program crashes so we have to wait here until the process finishes first
                 if (RunningFlag)
                 {
-                    // printf("Current Processes ID: %d\n",currentProcess->pid);
-                    //usleep(10);
-                    //printf("Waiting...\n");
                     kill(currentProcess->pid, SIGUSR1);
                     rem_time = msgrcv(msgq_id2, &msgrem, sizeof(msgrem.data), 1, !IPC_NOWAIT);
                     currentProcess->data.remainingtime = msgrem.data;
                     Node *temp = newNode(currentProcess->data);
                     temp->pid = currentProcess->pid;
+                    //printf("Process %d : Remaining %d \n",temp->data.id,temp->data.remainingtime);
                     if (isEmpty(&head))
                     {
                         head = temp;
@@ -341,7 +343,7 @@ int main(int argc, char *argv[])
                     currentProcess->pid = tempnode.pid;
                     if (currentProcess->data.is_running == true)
                     {
-                        printf("Current process pid = %d \n", currentProcess->pid);
+                        //printf("Current process pid = %d \n", currentProcess->pid);
                         printf("Process %d resumed at time: %d\n", currentProcess->data.id, getClk());
                         kill(currentProcess->pid,SIGCONT);
                     }
