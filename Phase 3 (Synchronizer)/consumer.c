@@ -27,11 +27,11 @@ struct msgbuff
     char mtext[70];
 };
 
-int bufferSize = 1; // Should be read from the user
+int bufferSize = 7; // Should be read from the user
 
 int CreateSharedMemory(int bufferSize,char identifier);
 void* AttachSharedMemory(int shmid);
-int GetSemaphore(char identifier);
+int CreateSemaphore(int value,char identifier);
 int CreateMessageQueue(char identifier);
 void ConsumeItem(int* shmaddr_buffer,int* shmaddr_number_of_elements);
 void up(int sem);
@@ -48,7 +48,7 @@ void main()
     int shmid_number_of_elements = CreateSharedMemory(sizeof(int),'n');
     int* shmaddr_number_of_elements = AttachSharedMemory(shmid_number_of_elements);
 
-    int sem2 = GetSemaphore('2');
+    int sem2 = CreateSemaphore(1,'2');
 
     int msgq_id = CreateMessageQueue('m');    
 
@@ -109,7 +109,8 @@ void main()
             printf("\nsecond condition2\n");
 
         }
-        else if (bufferSize != 1)
+        
+        if (bufferSize != 1)
         {
             up(sem2);
         }
@@ -178,14 +179,14 @@ int CreateSemaphore(int value,char identifier)
     union Semun semun;
     key_id_sem = ftok("keyfile", identifier);
 
-    int sem = semget(key_id_sem, 1, 0666 | IPC_CREAT);
+    int sem = semget(key_id_sem, 1, 0666 | IPC_CREAT | IPC_EXCL);
 
     if (sem == -1)
     {
-        perror("Error in create sem");
-        exit(-1);
+        int sem = semget(key_id_sem, 1, 0666 | IPC_CREAT);
+        return sem;
     }
-
+    
     semun.val = value;
     if (semctl(sem, 0, SETVAL, semun) == -1)
     {
