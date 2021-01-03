@@ -25,10 +25,10 @@ union Semun
 struct msgbuff
 {
     long mtype;
-    char mtext[70];
+    int message;
 };
 
-int bufferSize = 7; // Should be read from the user
+int bufferSize = -1; // Should be read from the user
 
 int CreateSharedMemory(int bufferSize,char identifier);
 void* AttachSharedMemory(int shmid);
@@ -43,10 +43,32 @@ int shmid_buffer;
 int shmid_number_of_elements;
 int sem2;
 int msgq_id;
+int bufferSizeMessageQueueId;
+
 // Assume Producer starts first for initializtion ?????
 void main()
 {
     signal(SIGINT, handler);
+
+    bufferSizeMessageQueueId = CreateMessageQueue('b');
+    struct msgbuff message;
+
+    message.mtype = 'c';
+    int rec_val = msgrcv(bufferSizeMessageQueueId, &message, sizeof(message.message), message.mtype, IPC_NOWAIT);
+    if (rec_val == -1) {
+        printf("Please Enter Buffer Size: ");
+        scanf("%d" , &bufferSize);
+
+        message.mtype = 'p';
+        message.message = bufferSize;
+        int send_val = msgsnd(bufferSizeMessageQueueId, &message, sizeof(message.message), !IPC_NOWAIT);
+        if (send_val == -1)
+            perror("Error in sending buffer size");
+    } else{
+        bufferSize = message.message;
+    }
+
+    printf("[Info] Buffer Sizer = %d" , bufferSize);
 
     shmid_buffer = CreateSharedMemory(bufferSize,'b');
     int* shmaddr_buffer = AttachSharedMemory(shmid_buffer);
@@ -59,7 +81,7 @@ void main()
 
     sem2 = CreateSemaphore(1,'2');
 
-    msgq_id = CreateMessageQueue('m');    
+    msgq_id = CreateMessageQueue('m');
 
     while (1)
     {
@@ -74,10 +96,10 @@ void main()
             struct msgbuff message;
 
             message.mtype = 'p'; /* arbitrary value */
-            strcpy(message.mtext, "produced");
+            message.message = 'p';
 
             printf("\nfirst middle condition1\n");
-            int send_val = msgsnd(msgq_id, &message, sizeof(message.mtext), !IPC_NOWAIT);
+            int send_val = msgsnd(msgq_id, &message, sizeof(message.message), !IPC_NOWAIT);
 
             if (send_val == -1)
                 perror("Errror in send");
@@ -90,7 +112,7 @@ void main()
 
                 up(sem2);
 
-                int rec_val = msgrcv(msgq_id, &message, sizeof(message.mtext), message.mtype, !IPC_NOWAIT);
+                int rec_val = msgrcv(msgq_id, &message, sizeof(message.message), message.mtype, !IPC_NOWAIT);
 
                 if (rec_val == -1)
                     perror("Error in receive");
@@ -103,7 +125,7 @@ void main()
         {
             up(sem2);
         }
-        
+
 
         down(sem2);
         if (*shmaddr_number_of_elements == bufferSize)
@@ -115,7 +137,7 @@ void main()
             message.mtype = 'c'; /* arbitrary value */
 
             up(sem2);
-            int rec_val = msgrcv(msgq_id, &message, sizeof(message.mtext), message.mtype, !IPC_NOWAIT);
+            int rec_val = msgrcv(msgq_id, &message, sizeof(message.message), message.mtype, !IPC_NOWAIT);
 
             if (rec_val == -1)
                 perror("Error in receive");
@@ -127,7 +149,7 @@ void main()
         {
             up(sem2);
         }
-        
+
         down(sem2);
         if(*shmaddr_number_of_elements != 0 && *shmaddr_number_of_elements != bufferSize)
         {
@@ -138,9 +160,9 @@ void main()
             printf("\nthird condition 2\n");
         }
         up(sem2);
-        
+
     }
-    
+
 }
 
 void ProduceItem(int* shmaddr_buffer,int* shmaddr_number_of_elements)
@@ -202,7 +224,7 @@ int CreateSemaphore(int value,char identifier)
         int sem = semget(key_id_sem, 1, 0666 | IPC_CREAT);
         return sem;
     }
-    
+
     semun.val = value;
     if (semctl(sem, 0, SETVAL, semun) == -1)
     {
@@ -263,7 +285,8 @@ void up(int sem)
 
 void handler(int signum)
 {
-   msgctl(msgq_id, IPC_RMID, (struct msqid_ds *)0); 
+   msgctl(msgq_id, IPC_RMID, (struct msqid_ds *)0);
+   msgctl(bufferSizeMessageQueueId, IPC_RMID, (struct msqid_ds *)0);
    shmctl(shmid_buffer, IPC_RMID, (struct shmid_ds *)0);
    shmctl(shmid_number_of_elements, IPC_RMID, (struct shmid_ds *)0);
    semctl(sem2,0,IPC_RMID,NULL);

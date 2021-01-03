@@ -24,10 +24,10 @@ union Semun
 struct msgbuff
 {
     long mtype;
-    char mtext[70];
+    int message;
 };
 
-int bufferSize = 7; // Should be read from the user
+int bufferSize = -1; // Should be read from the user
 
 int CreateSharedMemory(int bufferSize,char identifier);
 void* AttachSharedMemory(int shmid);
@@ -40,6 +40,28 @@ void down(int sem);
 // Assume Producer starts first for initializtion ?????
 void main()
 {
+
+    struct msgbuff message;
+
+    int bufferSizeMessageQueueId= CreateMessageQueue('b');
+
+    message.mtype = 'p';
+    int rec_val = msgrcv(bufferSizeMessageQueueId, &message, sizeof(message.message), message.mtype, IPC_NOWAIT);
+    if (rec_val == -1) {
+        printf("Please Enter Buffer Size: ");
+        scanf("%d" , &bufferSize);
+
+        message.mtype = 'c';
+        message.message = bufferSize;
+        int send_val = msgsnd(bufferSizeMessageQueueId, &message, sizeof(message.message), !IPC_NOWAIT);
+        if (send_val == -1)
+            perror("Error in sending buffer size");
+    } else{
+        bufferSize = message.message;
+    }
+
+    printf("[Info] Buffer Sizer = %d" , bufferSize);
+
     // Create(get) shared memory for buffer
     int shmid_buffer = CreateSharedMemory(bufferSize,'b');
     int* shmaddr_buffer = AttachSharedMemory(shmid_buffer);
@@ -64,7 +86,7 @@ void main()
             message.mtype = 'p'; /* arbitrary value */
 
             up(sem2);
-            int rec_val = msgrcv(msgq_id, &message, sizeof(message.mtext), message.mtype, !IPC_NOWAIT);
+            int rec_val = msgrcv(msgq_id, &message, sizeof(message.message), message.mtype, !IPC_NOWAIT);
 
             if (rec_val == -1)
                 perror("Error in receive");
@@ -85,9 +107,9 @@ void main()
             struct msgbuff message;
 
             message.mtype = 'c'; /* arbitrary value */
-            strcpy(message.mtext, "consumed");
+            message.message = 'c' ;
 
-            int send_val = msgsnd(msgq_id, &message, sizeof(message.mtext), !IPC_NOWAIT);
+            int send_val = msgsnd(msgq_id, &message, sizeof(message.message), !IPC_NOWAIT);
 
             if (send_val == -1)
                 perror("Errror in send");
@@ -100,7 +122,7 @@ void main()
 
                 up(sem2);
 
-                int rec_val = msgrcv(msgq_id, &message, sizeof(message.mtext), message.mtype, !IPC_NOWAIT);
+                int rec_val = msgrcv(msgq_id, &message, sizeof(message.message), message.mtype, !IPC_NOWAIT);
 
                 if (rec_val == -1)
                     perror("Error in receive");
