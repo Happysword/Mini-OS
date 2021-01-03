@@ -60,7 +60,7 @@ int main()
     int numberOfElementsSharedId = createSharedMemory(sizeof(int), 'n');
     int* numberOfElements = attachSharedMemory(numberOfElementsSharedId);
 
-    int semaphore = createSemaphore(1, '2');
+    int semaphore = createSemaphore(1, 's');
 
     int sleepWakeupMessageQueueId = createMessageQueue('m');
 
