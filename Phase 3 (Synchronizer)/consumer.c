@@ -10,6 +10,7 @@
 #include <ctype.h>
 #include <sys/sem.h>
 #include <sys/msg.h>
+#include <signal.h>
 
 /* arg for semctl system calls. */
 union Semun
@@ -43,12 +44,15 @@ void up(int semaphore);
 
 void down(int semaphore);
 
+void signalHandler(int signum);
+
 int getBufferSize(int bufferSizeMessageQueueId);
 
 
 // Assume Producer starts first for initializtion ?????
 int main()
 {
+    signal(SIGINT, signalHandler);
 
     int bufferSizeMessageQueueId = createMessageQueue('b');
     int bufferSize = getBufferSize(bufferSizeMessageQueueId);
@@ -257,4 +261,11 @@ void up(int semaphore)
         perror("Error in semaphore up");
         exit(-1);
     }
+}
+
+void signalHandler(int signum)
+{
+    printf("\nCaptured Ctrl+C\n");
+    printf("Freeing Resources happen at Producer, Just Exiting\n");
+    exit(0);
 }

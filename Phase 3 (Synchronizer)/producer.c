@@ -274,6 +274,7 @@ void up(int semaphore)
 
 void signalHandler(int signum)
 {
+    printf("\nCaptured Ctrl+C , Freeing Resources\n");
     msgctl(sleepWakeupMessageQueueId, IPC_RMID, NULL);
     msgctl(bufferSizeMessageQueueId, IPC_RMID, NULL);
     shmctl(bufferSharedId, IPC_RMID, NULL);
