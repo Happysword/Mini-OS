@@ -14,273 +14,247 @@
 /* arg for semctl system calls. */
 union Semun
 {
-    int val;               /* value for SETVAL */
-    struct semid_ds *buf;  /* buffer for IPC_STAT & IPC_SET */
-    ushort *array;         /* array for GETALL & SETALL */
-    struct seminfo *__buf; /* buffer for IPC_INFO */
-    void *__pad;
+    int value;                  /* value for SETVAL */
+    struct semid_ds* buffer;    /* buffer for IPC_STAT & IPC_SET */
+    ushort* array;              /* array for GETALL & SETALL */
+    struct seminfo* __buf;      /* buffer for IPC_INFO */
+    void* __pad;
 };
 
-struct msgbuff
+struct message_
 {
-    long mtype;
+    long type;
     int message;
 };
 
-int bufferSize = -1; // Should be read from the user
+typedef struct message_ Message;
 
-int CreateSharedMemory(int bufferSize,char identifier);
-void* AttachSharedMemory(int shmid);
-int CreateSemaphore(int value,char identifier);
-int CreateMessageQueue(char identifier);
-void ConsumeItem(int* shmaddr_buffer,int* shmaddr_number_of_elements);
-void up(int sem);
-void down(int sem);
+int createSharedMemory(int bufferSize, char identifier);
+
+void* attachSharedMemory(int sharedMemoryId);
+
+int createSemaphore(int value, char identifier);
+
+int createMessageQueue(char identifier);
+
+void consumeItem(const int* buffer, int bufferSize, int* numberOfElements);
+
+void up(int semaphore);
+
+void down(int semaphore);
+
+int getBufferSize(int bufferSizeMessageQueueId);
+
 
 // Assume Producer starts first for initializtion ?????
-void main()
+int main()
 {
 
-    struct msgbuff message;
+    int bufferSizeMessageQueueId = createMessageQueue('b');
+    int bufferSize = getBufferSize(bufferSizeMessageQueueId);
+    printf("[Info] Buffer Size = %d\n", bufferSize);
 
-    int bufferSizeMessageQueueId= CreateMessageQueue('b');
+    int bufferSharedId = createSharedMemory(bufferSize, 'b');
+    int* sharedBuffer = attachSharedMemory(bufferSharedId);
 
-    message.mtype = 'p';
-    int rec_val = msgrcv(bufferSizeMessageQueueId, &message, sizeof(message.message), message.mtype, IPC_NOWAIT);
-    if (rec_val == -1) {
-        printf("Please Enter Buffer Size: ");
-        scanf("%d" , &bufferSize);
+    int numberOfElementsSharedId = createSharedMemory(sizeof(int), 'n');
+    int* numberOfElements = attachSharedMemory(numberOfElementsSharedId);
 
-        message.mtype = 'c';
-        message.message = bufferSize;
-        int send_val = msgsnd(bufferSizeMessageQueueId, &message, sizeof(message.message), !IPC_NOWAIT);
-        if (send_val == -1)
-            perror("Error in sending buffer size");
-    } else{
-        bufferSize = message.message;
-    }
+    int semaphore = createSemaphore(1, '2');
 
-    printf("[Info] Buffer Sizer = %d" , bufferSize);
-
-    // Create(get) shared memory for buffer
-    int shmid_buffer = CreateSharedMemory(bufferSize,'b');
-    int* shmaddr_buffer = AttachSharedMemory(shmid_buffer);
-
-    // Create(get) shared memory for number of elements
-    int shmid_number_of_elements = CreateSharedMemory(sizeof(int),'n');
-    int* shmaddr_number_of_elements = AttachSharedMemory(shmid_number_of_elements);
-
-    int sem2 = CreateSemaphore(1,'2');
-
-    int msgq_id = CreateMessageQueue('m');    
+    int sleepWakeupMessageQueueId = createMessageQueue('m');
 
     while (1)
     {
-        down(sem2);
+        down(semaphore);
         // If buffer empty
-        if (*shmaddr_number_of_elements == 0)
+        if (*numberOfElements == 0)
         {
-            printf("\nfirst condition1\n");
-            struct msgbuff message;
+            Message message;
+            message.type = 'p';
 
-            message.mtype = 'p'; /* arbitrary value */
+            up(semaphore);
+            int receivingStatus = msgrcv(sleepWakeupMessageQueueId, &message, sizeof(message.message), message.type, !IPC_NOWAIT);
 
-            up(sem2);
-            int rec_val = msgrcv(msgq_id, &message, sizeof(message.message), message.mtype, !IPC_NOWAIT);
-
-            if (rec_val == -1)
+            if (receivingStatus == -1)
                 perror("Error in receive");
-
-            printf("\nfirst condition2\n");
         }
         else
         {
-            up(sem2);
+            up(semaphore);
         }
-        
-        down(sem2);
-        if (*shmaddr_number_of_elements == bufferSize)
+
+        down(semaphore);
+        if (*numberOfElements == bufferSize)
         {
-            printf("\nsecond condition1\n");
-            ConsumeItem(shmaddr_buffer,shmaddr_number_of_elements);
+            consumeItem(sharedBuffer, bufferSize, numberOfElements);
 
-            struct msgbuff message;
+            Message message;
+            message.type = 'c';
 
-            message.mtype = 'c'; /* arbitrary value */
-            message.message = 'c' ;
+            int sendingStatus = msgsnd(sleepWakeupMessageQueueId, &message, sizeof(message.message), !IPC_NOWAIT);
+            if (sendingStatus == -1)
+                perror("Error in send");
 
-            int send_val = msgsnd(msgq_id, &message, sizeof(message.message), !IPC_NOWAIT);
-
-            if (send_val == -1)
-                perror("Errror in send");
-
-            if(bufferSize == 1)
+            if (bufferSize == 1)
             {
-                struct msgbuff message;
+                message.type = 'p';
 
-                message.mtype = 'p'; /* arbitrary value */
+                up(semaphore);
 
-                up(sem2);
-
-                int rec_val = msgrcv(msgq_id, &message, sizeof(message.message), message.mtype, !IPC_NOWAIT);
-
-                if (rec_val == -1)
+                int receivingStatus = msgrcv(sleepWakeupMessageQueueId, &message, sizeof(message.message), message.type, !IPC_NOWAIT);
+                if (receivingStatus == -1)
                     perror("Error in receive");
             }
 
-            printf("\nsecond condition2\n");
-
         }
-        
         if (bufferSize != 1)
         {
-            up(sem2);
+            up(semaphore);
         }
 
-        down(sem2);
-        if(*shmaddr_number_of_elements != 0 && *shmaddr_number_of_elements != bufferSize)
+        down(semaphore);
+        if (*numberOfElements != 0 && *numberOfElements != bufferSize)
         {
-            printf("\nthird condition 1\n");
-            ConsumeItem(shmaddr_buffer,shmaddr_number_of_elements);
-
-            printf("\nthird condition 2\n");
+            consumeItem(sharedBuffer, bufferSize, numberOfElements);
         }
-        up(sem2);
+        up(semaphore);
 
     }
-    
+
+    return 0;
 }
 
-void ConsumeItem(int* shmaddr_buffer,int* shmaddr_number_of_elements)
+int getBufferSize(int bufferSizeMessageQueueId)
+{
+    int bufferSize = -1;
+    Message message;
+    message.type = 'p';
+    // Check if we received the buffer size but do not wait for it
+    int receivingStatus = msgrcv(bufferSizeMessageQueueId, &message, sizeof(message.message), message.type, IPC_NOWAIT);
+    if (receivingStatus == -1) // if we didn't receive anything
+    {
+        printf("Please Enter Buffer Size: ");
+        scanf("%d", &bufferSize);
+
+        message.type = 'c';
+        message.message = bufferSize;
+        int sendingStatus = msgsnd(bufferSizeMessageQueueId, &message, sizeof(message.message), !IPC_NOWAIT);
+        if (sendingStatus == -1)
+        {
+            perror("Error in sending buffer size");
+            exit(-1);
+        }
+    }
+    else
+    {
+        bufferSize = message.message;
+    }
+    return bufferSize;
+}
+
+void consumeItem(const int* buffer, int bufferSize, int* numberOfElements)
 {
     static int consumeLocation = 0;
 
-    int item = shmaddr_buffer[consumeLocation];
+    int item = buffer[consumeLocation];
 
     consumeLocation = (consumeLocation + 1) % bufferSize;
 
-    shmaddr_number_of_elements[0]--;
+    (*numberOfElements)--;
 
-	printf("Consume value %d\n", item);
+    printf("[Consumer] Consumed Item %d\n", item);
 }
 
-int CreateSharedMemory(int bufferSize,char identifier)
+int createSharedMemory(int bufferSize, char identifier)
 {
-    key_t key_id_shared;
-    int shmid;
+    // Create shared memory with size = bufferSize
+    key_t key_id_shared = ftok("keyfile", identifier);
+    int sharedMemoryId = shmget(key_id_shared, bufferSize * sizeof(int), IPC_CREAT | 0666);
 
-    // Create shared memory with bufferSize
-    key_id_shared = ftok("keyfile", identifier);
-    shmid = shmget(key_id_shared, bufferSize * sizeof(int), IPC_CREAT | 0666);
-
-    if (shmid == -1)
+    if (sharedMemoryId == -1)
     {
-        perror("Error in create");
+        perror("Error in create Shared Memory");
         exit(-1);
     }
 
-    return shmid;
+    return sharedMemoryId;
 }
 
-void* AttachSharedMemory(int shmid)
+void* attachSharedMemory(int sharedMemoryId)
 {
-    // Client writing on the shared memory
-    void *shmaddr = shmat(shmid, (void *)0, 0);
-    if (shmaddr == -1)
+    void* sharedMemoryAddress = shmat(sharedMemoryId, NULL, 0);
+    if (sharedMemoryAddress == -1)
     {
-        perror("Error in attach in client");
+        perror("Error in attaching shared memory");
         exit(-1);
     }
-    return shmaddr;
+    return sharedMemoryAddress;
 }
 
-int CreateSemaphore(int value,char identifier)
+int createSemaphore(int value, char identifier)
 {
-    key_t  key_id_sem;
-
     union Semun semun;
-    key_id_sem = ftok("keyfile", identifier);
+    key_t keyToken = ftok("keyfile", identifier);
 
-    int sem = semget(key_id_sem, 1, 0666 | IPC_CREAT | IPC_EXCL);
+    int semaphore = semget(keyToken, 1, 0666 | IPC_CREAT | IPC_EXCL);
 
-    if (sem == -1)
+    if (semaphore == -1)
     {
-        int sem = semget(key_id_sem, 1, 0666 | IPC_CREAT);
-        return sem;
+        return semget(keyToken, 1, 0666 | IPC_CREAT);;
     }
-    
-    semun.val = value;
-    if (semctl(sem, 0, SETVAL, semun) == -1)
+
+    semun.value = value;
+    if (semctl(semaphore, 0, SETVAL, semun) == -1)
     {
-        perror("Error in semctl");
+        perror("Error in creating semaphore");
         exit(-1);
     }
 
-    return sem;
+    return semaphore;
 }
 
-int GetSemaphore(char identifier)
+int createMessageQueue(char identifier)
 {
-    key_t  key_id_sem;
 
-    union Semun semun;
-    key_id_sem = ftok("keyfile", identifier);
+    key_t keyToken = ftok("keyfile", identifier);
+    int messageQueueId = msgget(keyToken, 0666 | IPC_CREAT);
 
-    int sem = semget(key_id_sem, 1, 0666 | IPC_CREAT);
-
-    if (sem == -1)
+    if (messageQueueId == -1)
     {
-        perror("Error in create sem");
+        perror("Error in creating Message Queue");
         exit(-1);
     }
 
-    return sem;
+    return messageQueueId;
 }
 
-int CreateMessageQueue(char identifier)
+void down(int semaphore)
 {
-    key_t key_id;
-    int msgq_id;
+    struct sembuf operation;
 
-    key_id = ftok("keyfile", identifier);
-    msgq_id = msgget(key_id, 0666 | IPC_CREAT);
+    operation.sem_num = 0;
+    operation.sem_op = -1;
+    operation.sem_flg = !IPC_NOWAIT;
 
-    if (msgq_id == -1)
+    if (semop(semaphore, &operation, 1) == -1)
     {
-        perror("Error in create");
-        exit(-1);
-    }
-
-    return msgq_id;
-
-}
-
-void down(int sem)
-{
-    struct sembuf p_op;
-
-    p_op.sem_num = 0;
-    p_op.sem_op = -1;
-    p_op.sem_flg = !IPC_NOWAIT;
-
-    if (semop(sem, &p_op, 1) == -1)
-    {
-        perror("Error in down()");
+        perror("Error in semaphore down");
         exit(-1);
     }
 }
 
-void up(int sem)
+void up(int semaphore)
 {
-    struct sembuf v_op;
+    struct sembuf operation;
 
-    v_op.sem_num = 0;
-    v_op.sem_op = 1;
-    v_op.sem_flg = !IPC_NOWAIT;
+    operation.sem_num = 0;
+    operation.sem_op = 1;
+    operation.sem_flg = !IPC_NOWAIT;
 
-    if (semop(sem, &v_op, 1) == -1)
+    if (semop(semaphore, &operation, 1) == -1)
     {
-        perror("Error in up()");
+        perror("Error in semaphore up");
         exit(-1);
     }
 }
