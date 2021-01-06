@@ -1,6 +1,8 @@
 #include "headers.h"
 int pid[2];
+int msgq_id;
 void clearResources(int);
+processWrapper *head;
 
 int main(int argc, char *argv[])
 {
@@ -14,7 +16,7 @@ int main(int argc, char *argv[])
 
     FILE *pFile;
     pFile = fopen(fileName, "r");
-    processWrapper *head;
+    
     processWrapper *prev;
 
     char line[256];
@@ -71,7 +73,7 @@ int main(int argc, char *argv[])
 
     // Scheduler
     key_t key_id;
-    int msgq_id;
+    
     key_id = ftok("keyfile", 1);                //create unique key for Sending the processes
     msgq_id = msgget(key_id, 0666 | IPC_CREAT); //create message queue and return id
 
@@ -130,7 +132,15 @@ int main(int argc, char *argv[])
 void clearResources(int signum)
 {
     //TODO Clears all resources in case of interruption
+    msgctl(msgq_id , IPC_RMID, (struct msqid_ds *) 0);
     kill(pid[0], SIGINT);
     kill(pid[1], SIGINT);
+    processWrapper *temp;
+    while(head->next != NULL){
+        temp = head;
+        head = head->next;
+        free(temp);
+    }
+    printf("In clear resources\n");
     exit(0);
 }
