@@ -4,8 +4,12 @@
 int timePassed = 0;
 int numberOfTotalProc, numberOfFinishedProc = 0;
 int totalWT = 0;
+int msgq_id, msgq_id2, msgq_id3;
+
 float* WTAnums;
 void TerminateSched();
+void clearResources(int);
+
 /*****************************
  *****************************
  *      Priority Queue
@@ -145,14 +149,14 @@ int main(int argc, char *argv[])
     initClk();
 
     signal(SIGUSR1, handlerChildTermination);
+    signal(SIGINT, clearResources);
 
     //Number of processes and WTA array to calculate values
     numberOfTotalProc = atoi(argv[3]);
     WTAnums = (float*) malloc( sizeof(float)*numberOfTotalProc );
 
     // Create the Message queue that we recieve processes on
-    key_t key_id, key_id2;
-    int msgq_id, msgq_id2;
+    key_t key_id, key_id2, key_id3;
 
     key_id = ftok("keyfile", 1);                //create unique key for Sending the processes
     msgq_id = msgget(key_id, 0666 | IPC_CREAT); //create message queue and return id
@@ -160,7 +164,11 @@ int main(int argc, char *argv[])
     key_id2 = ftok("keyfile", 10);                //create unique key for Sending the processes
     msgq_id2 = msgget(key_id2, 0666 | IPC_CREAT); //create message queue and return id
 
-    if (msgq_id == -1 || msgq_id2 == -1)
+    key_id3 = ftok("keyfile", 11);                //create unique key for Sending the processes
+    msgq_id3 = msgget(key_id3, 0666 | IPC_CREAT); //create message queue and return id
+
+
+    if (msgq_id == -1 || msgq_id2 == -1 || msgq_id3 == -1)
     {
         perror("Error in create");
         exit(-1);
@@ -179,7 +187,7 @@ int main(int argc, char *argv[])
     int mode = atoi(argv[1]);
     int quantum = atoi(argv[2]);
     struct msgbuff message;
-    msgrembuff msgrem;
+    msgrembuff msgrem,msgrem2;
     int rec_val, rem_time;
     int clk = getClk();
     int clk2 = getClk();
@@ -192,13 +200,24 @@ int main(int argc, char *argv[])
         {
             if (currentProcess != NULL)
             {
+                // Send the Remaining Time to the process 
                 msgrem.mtype = 2;
                 currentProcess->data.remainingtime -= 1;
                 msgrem.data = currentProcess->data.remainingtime;
+                int lastremtime = currentProcess->data.remainingtime;
                 if (msgsnd(msgq_id2, &msgrem, sizeof(msgrem.data), !IPC_NOWAIT) == -1)
                 {
                     perror("Errror in send");
                 }
+
+                // Wait to recieve confirmation from process and clear all unrecieved messages from before
+
+                msgrcv(msgq_id3, &msgrem2, sizeof(msgrem2.data), 1, !IPC_NOWAIT);
+                while (msgrem2.data != lastremtime)
+                {
+                    msgrcv(msgq_id3, &msgrem2, sizeof(msgrem2.data), 1, !IPC_NOWAIT);
+                }
+
             }
             clk2 = now;
             timePassed++;
@@ -270,8 +289,6 @@ int main(int argc, char *argv[])
                 {
                     // Send to the current to sleep
                     kill(currentProcess->pid, SIGUSR1);
-                    rem_time = msgrcv(msgq_id2, &msgrem, sizeof(msgrem.data), 1, !IPC_NOWAIT);
-                    currentProcess->data.remainingtime = msgrem.data;
                     int waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
                     printf("At time %d process %d stopped arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
                     Node *temp = newNode(currentProcess->data);
@@ -374,8 +391,6 @@ int main(int argc, char *argv[])
                     if (RunningFlag)
                     {
                         kill(currentProcess->pid, SIGUSR1);
-                        rem_time = msgrcv(msgq_id2, &msgrem, sizeof(msgrem.data), 1, !IPC_NOWAIT);
-                        currentProcess->data.remainingtime = msgrem.data;
                         int waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
                         printf("At time %d process %d stopped arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
                         Node *temp = newNode(currentProcess->data);
@@ -449,5 +464,13 @@ void TerminateSched () {
 
     printf("CPU utilization = 100%% \nAvg WTA = %.2f \nAvg Waiting = %.2f \nStd WTA = %.2f \n",mean,avgWT,SD);
     kill(getppid(),SIGINT);
+    exit(0);
+}
+
+void clearResources(int signum)
+{
+    //TODO Clears all resources in case of interruption
+    msgctl(msgq_id2 , IPC_RMID, (struct msqid_ds *) 0);
+    msgctl(msgq_id3 , IPC_RMID, (struct msqid_ds *) 0);
     exit(0);
 }
