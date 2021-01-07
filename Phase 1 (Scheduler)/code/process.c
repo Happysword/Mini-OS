@@ -40,17 +40,9 @@ int main(int agrc, char * argv[])
     {
         msgrcv(msgq_id, &msg2, sizeof(msg2.data), 2, !IPC_NOWAIT);
         remainingtime = msg2.data;
-        // printf("Process: %d remainingTime: %d\n",getpid(),remainingtime);
-        /*while(sleep_flag)
-            sleep(1);*/
-        /*now = getClk();
-        if(now - clk == 1){
-            remainingtime -= 1;
-            clk = now; 
-            printf("Process: %d remainingTime: %d\n",getpid(),remainingtime);
-        }*/
+        
     }
-    printf("Inside Process: Process Finished\n");
+    //printf("Inside Process: Process Finished\n");
     kill(getppid(),SIGUSR1);
     destroyClk(false);
     
@@ -61,23 +53,12 @@ void handlerSleep(int sigNum){
     msgrembuff msg;
     msg.mtype = 1;
     
-    /*if(getClk() - clk == 1 && remainingtime != 0){
-        remainingtime -= 1;
-        printf("Process: %d remainingTime: %d\n",getpid(),remainingtime);
-    }*/
     msg.data = remainingtime;
-    printf("Process: %d remainingTime: %d\n",getpid(),remainingtime);
+    //printf("Process: %d remainingTime: %d\n",getpid(),remainingtime);
     // printf("Inside Sleep handler\n");
     if(msgsnd(msgq_id, &msg, sizeof(msg.data), !IPC_NOWAIT) == -1){
         perror("Errror in send");
     }
-    //sleep_flag= true;
-    /*if(remainingtime == 0){
-        printf("Inside Process: Process Finished\n");
-        kill(getppid(),SIGUSR1);
-        destroyClk(false);
-        exit(0);
-    }*/
     raise(SIGSTOP);
     //printf("Awaked\n");
     clk = getClk();

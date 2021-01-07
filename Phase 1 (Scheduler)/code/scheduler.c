@@ -1,7 +1,11 @@
 #include "headers.h"
+#include <math.h>
 
 int timePassed = 0;
-
+int numberOfTotalProc, numberOfFinishedProc = 0;
+int totalWT = 0;
+float* WTAnums;
+void TerminateSched();
 /*****************************
  *****************************
  *      Priority Queue
@@ -111,11 +115,27 @@ Node *currentProcess;
 
 void handlerChildTermination(int sigNum)
 {
+    // Calculate the wait time from what we have
+    int waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
+    int tatime = getClk() - currentProcess->data.arrivaltime;
+    
+    float wtatime = (float)tatime / currentProcess->data.runningtime;
+    if (currentProcess->data.runningtime == 0) wtatime = 0;
+    
+    printf("At time %d process %d finished arr %d total %d remain %d wait %d TA %d WTA %.2f\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime,tatime,wtatime);
     RunningFlag = false;
     timePassed = 0;
+
+    //Calculate Total Stats
+    numberOfFinishedProc++;
+    totalWT += waittime;
+    WTAnums[currentProcess->data.id - 1] = wtatime;
+    if(numberOfFinishedProc == numberOfTotalProc) TerminateSched();
+
+    //Free the process
     free(currentProcess);
     currentProcess = NULL;
-    printf("Process ended at time: %d\n", getClk());
+
 }
 
 /**********************************************************MAIN************************************************************************************/
@@ -125,6 +145,10 @@ int main(int argc, char *argv[])
     initClk();
 
     signal(SIGUSR1, handlerChildTermination);
+
+    //Number of processes and WTA array to calculate values
+    numberOfTotalProc = atoi(argv[3]);
+    WTAnums = (float*) malloc( sizeof(float)*numberOfTotalProc );
 
     // Create the Message queue that we recieve processes on
     key_t key_id, key_id2;
@@ -141,8 +165,6 @@ int main(int argc, char *argv[])
         perror("Error in create");
         exit(-1);
     }
-
-    printf("The mode is %s and the quantum is %s\n", argv[1], argv[2]);
 
     /*
     *
@@ -164,16 +186,15 @@ int main(int argc, char *argv[])
 
     while (1)
     {
+        // Calculate the current clock
         int now = getClk();
         if ((now - clk2) == 1)
         {
             if (currentProcess != NULL)
             {
-                //printf("in clk\n");
                 msgrem.mtype = 2;
                 currentProcess->data.remainingtime -= 1;
                 msgrem.data = currentProcess->data.remainingtime;
-                //printf("remaining: %d\n",currentProcess->data.remainingtime);
                 if (msgsnd(msgq_id2, &msgrem, sizeof(msgrem.data), !IPC_NOWAIT) == -1)
                 {
                     perror("Errror in send");
@@ -207,7 +228,8 @@ int main(int argc, char *argv[])
                 struct Node tempnode = pop(&head);
                 currentProcess = newNode(tempnode.data);
                 currentProcess->pid = tempnode.pid;
-                printf("Process %d started at time: %d\n", currentProcess->data.id, getClk());
+                int waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
+                printf("At time %d process %d started arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
                 int pid = fork();
                 if (pid == 0)
                 {
@@ -222,15 +244,6 @@ int main(int argc, char *argv[])
                 }
                 RunningFlag = true;
             }
-
-            /*Node *temp = head;
-            while (temp != NULL)
-            {
-                printf("%d ", temp->data.id);
-                temp = temp->next;
-            }
-            printf("\n");
-            */
         }
 
         // 2 - SRTN
@@ -251,15 +264,6 @@ int main(int argc, char *argv[])
                     Node *temp = newNode(message.data);
                     insertSorted(&head, temp, 0);
                 }
-                /*
-                Node *temp = head;
-                while (temp != NULL)
-                {
-                    printf("%d ", temp->data.id);
-                    temp = temp->next;
-                }
-                printf("\n");
-                */
 
                 // We compare the head to the current process if the head has lower time we switch
                 if (!isEmpty(&head) && currentProcess!=NULL && head->data.remainingtime < currentProcess->data.remainingtime)
@@ -268,6 +272,8 @@ int main(int argc, char *argv[])
                     kill(currentProcess->pid, SIGUSR1);
                     rem_time = msgrcv(msgq_id2, &msgrem, sizeof(msgrem.data), 1, !IPC_NOWAIT);
                     currentProcess->data.remainingtime = msgrem.data;
+                    int waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
+                    printf("At time %d process %d stopped arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
                     Node *temp = newNode(currentProcess->data);
                     temp->pid = currentProcess->pid;
                     if (isEmpty(&head))
@@ -284,7 +290,8 @@ int main(int argc, char *argv[])
                     currentProcess = newNode(tempnode.data);
                     currentProcess->pid = tempnode.pid;
                     currentProcess->data.is_running = true;
-                    printf("Process %d started at time: %d\n", currentProcess->data.id, getClk());
+                    waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
+                    printf("At time %d process %d started arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
                     int pid = fork();
                     if (pid == 0)
                     {
@@ -307,14 +314,15 @@ int main(int argc, char *argv[])
                 currentProcess->pid = tempnode.pid;
                 if (currentProcess->data.is_running == true)
                 {
-                    //printf("Current process pid = %d \n", currentProcess->pid);
-                    printf("Process %d resumed at time: %d\n", currentProcess->data.id, getClk());
+                    int waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
+                    printf("At time %d process %d resumed arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
                     kill(currentProcess->pid, SIGCONT);
                 }
                 else
                 {
                     currentProcess->data.is_running = true;
-                    printf("Process %d started at time: %d\n", currentProcess->data.id, getClk());
+                    int waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
+                    printf("At time %d process %d started arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
                     int pid = fork();
                     if (pid == 0)
                     {
@@ -350,65 +358,40 @@ int main(int argc, char *argv[])
                 else
                 {
                     Node *temp = newNode(message.data);
-                    // printf("Process %d arrived at time: %d\n", temp->data.id, getClk());
                     push(&tail, temp);
                 }
-
-                // Node *temp = head;
-                // while (temp != NULL)
-                // {
-                //     printf("%d ", temp->data.id);
-                //     temp = temp->next;
-                // }
-                // printf("\n");
             }
 
             if (!RunningFlag || timePassed == quantum)
             {
-                /*if(timePassed == quantum)
-                {
-                    Node* temp = head;
-                    while (temp != NULL)
-                    {
-                        printf("%d ", temp->data.id);
-                        temp = temp->next;
-                    }
-                    printf("\n");
-                }*/
-                usleep(10); // Because when the remaining time in the process reaches zero the running flag is set to false
-                            // and the current process is set to null But the scheduler is faster so it enters the if condition first
-                            // with running flag set to true and after it enters the handler then is called and sets the current process
-                            // to Null and the program crashes so we have to wait here until the process finishes first
-                if (RunningFlag)
-                {
-                    kill(currentProcess->pid, SIGUSR1);
-                    rem_time = msgrcv(msgq_id2, &msgrem, sizeof(msgrem.data), 1, !IPC_NOWAIT);
-                    currentProcess->data.remainingtime = msgrem.data;
-                    Node *temp = newNode(currentProcess->data);
-                    temp->pid = currentProcess->pid;
-                    //printf("Process %d : Remaining %d \n",temp->data.id,temp->data.remainingtime);
-                    if (isEmpty(&head))
-                    {
-                        head = temp;
-                        tail = head;
-                    }
-                    else
-                    {
-                        push(&tail, temp);
-                    }
-                    RunningFlag = false;
-
-                    // temp = head;
-                    // while (temp != NULL)
-                    // {
-                    //     printf("%d ", temp->data.id);
-                    //     temp = temp->next;
-                    // }
-                    // printf("\n");
-                }
 
                 if (!isEmpty(&head))
                 {
+                    usleep(10); // Because when the remaining time in the process reaches zero the running flag is set to false
+                            // and the current process is set to null But the scheduler is faster so it enters the if condition first
+                            // with running flag set to true and after it enters the handler then is called and sets the current process
+                            // to Null and the program crashes so we have to wait here until the process finishes first
+                    if (RunningFlag)
+                    {
+                        kill(currentProcess->pid, SIGUSR1);
+                        rem_time = msgrcv(msgq_id2, &msgrem, sizeof(msgrem.data), 1, !IPC_NOWAIT);
+                        currentProcess->data.remainingtime = msgrem.data;
+                        int waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
+                        printf("At time %d process %d stopped arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
+                        Node *temp = newNode(currentProcess->data);
+                        temp->pid = currentProcess->pid;
+                        
+                        if (isEmpty(&head))
+                        {
+                            head = temp;
+                            tail = head;
+                        }
+                        else
+                        {
+                            push(&tail, temp);
+                        }
+                        RunningFlag = false;
+                    }
 
                     struct Node tempnode = pop(&head);
                     if (isEmpty(&head))
@@ -417,14 +400,15 @@ int main(int argc, char *argv[])
                     currentProcess->pid = tempnode.pid;
                     if (currentProcess->data.is_running == true)
                     {
-                        //printf("Current process pid = %d \n", currentProcess->pid);
-                        printf("Process %d resumed at time: %d\n", currentProcess->data.id, getClk());
+                        int waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
+                        printf("At time %d process %d resumed arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
                         kill(currentProcess->pid, SIGCONT);
                     }
                     else
                     {
                         currentProcess->data.is_running = true;
-                        printf("Process %d started at time: %d\n", currentProcess->data.id, getClk());
+                        int waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
+                        printf("At time %d process %d started arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
                         int pid = fork();
                         if (pid == 0)
                         {
@@ -447,4 +431,23 @@ int main(int argc, char *argv[])
 
     //upon termination release the clock resources.
     destroyClk(true);
+}
+
+
+void TerminateSched () {
+    float avgWT = (float)totalWT / numberOfTotalProc;
+    //Calc Standard deviation
+    float sum = 0.0, mean, SD = 0.0;
+    int i;
+    for (i = 0; i < numberOfTotalProc; ++i) {
+        sum += WTAnums[i];
+    }
+    mean = sum / numberOfTotalProc;
+    for (i = 0; i < numberOfTotalProc; ++i)
+        SD += (WTAnums[i] - mean) * (WTAnums[i] - mean);
+    SD = sqrt(SD/numberOfTotalProc);
+
+    printf("CPU utilization = 100%% \nAvg WTA = %.2f \nAvg Waiting = %.2f \nStd WTA = %.2f \n",mean,avgWT,SD);
+    kill(getppid(),SIGINT);
+    exit(0);
 }

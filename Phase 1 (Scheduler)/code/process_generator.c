@@ -22,6 +22,7 @@ int main(int argc, char *argv[])
     char line[256];
     long unsigned int size = 256;
     bool flag = 1;
+    int numberOfProcesses = 0;
 
     while (fgets(line, size, pFile))
     {
@@ -44,6 +45,7 @@ int main(int argc, char *argv[])
             prev = process;
         }
         flag = 0;
+        numberOfProcesses++;
     }
     prev->next = NULL;
     fclose(pFile);
@@ -87,10 +89,11 @@ int main(int argc, char *argv[])
     if (pid[1] == 0)
     {
         //Change the mode and quantum to strings so we can send them
-        char modeStr[5], quantumStr[5];
+        char modeStr[5], quantumStr[5],processNum[5];
         sprintf(modeStr, "%d", mode);
         sprintf(quantumStr, "%d", quantum);
-        char *path[] = {"./scheduler.out", modeStr, quantumStr, NULL};
+        sprintf(processNum, "%d", numberOfProcesses);
+        char *path[] = {"./scheduler.out", modeStr, quantumStr,processNum, NULL};
         execv(path[0], path);
     }
 
@@ -141,6 +144,5 @@ void clearResources(int signum)
         head = head->next;
         free(temp);
     }
-    printf("In clear resources\n");
     exit(0);
 }
