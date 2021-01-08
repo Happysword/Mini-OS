@@ -1,14 +1,19 @@
 #include "headers.h"
 #include <math.h>
 
+// Global Variables
+FILE *logFile;
 int timePassed = 0;
 int numberOfTotalProc, numberOfFinishedProc = 0;
 int totalWT = 0;
 int msgq_id, msgq_id2, msgq_id3;
-
+bool RunningFlag = false;
+Node *currentProcess;
 float* WTAnums;
+
 void TerminateSched();
 void clearResources(int);
+
 
 /*****************************
  *****************************
@@ -17,16 +22,6 @@ void clearResources(int);
  *****************************
  *****************************
 */
-
-// Node
-typedef struct Node
-{
-
-    struct processData data;
-    struct Node *next;
-    int pid;
-
-} Node;
 
 // Constructor for a New Node
 Node *newNode(struct processData data)
@@ -114,9 +109,7 @@ int isEmpty(Node **head)
     return (*head) == NULL;
 }
 
-bool RunningFlag = false;
-Node *currentProcess;
-
+// when a process finishes its job it sends signal to the schedular
 void handlerChildTermination(int sigNum)
 {
     // Calculate the wait time from what we have
@@ -126,7 +119,10 @@ void handlerChildTermination(int sigNum)
     float wtatime = (float)tatime / currentProcess->data.runningtime;
     if (currentProcess->data.runningtime == 0) wtatime = 0;
     
-    printf("At time %d process %d finished arr %d total %d remain %d wait %d TA %d WTA %.2f\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime,tatime,wtatime);
+    logFile = fopen("scheduler.log", "a+");
+    fprintf(logFile, "At time %d process %d finished arr %d total %d remain %d wait %d TA %d WTA %.2f\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime,tatime,wtatime);
+    fclose(logFile);
+
     RunningFlag = false;
     timePassed = 0;
 
@@ -146,8 +142,13 @@ void handlerChildTermination(int sigNum)
 
 int main(int argc, char *argv[])
 {
+    // Create the log file
+    logFile = fopen("scheduler.log", "w+");
+    fprintf(logFile, "#At time x process y state arr w toal z remain y wait k\n");
+    fclose(logFile);
+    
     initClk();
-
+    
     signal(SIGUSR1, handlerChildTermination);
     signal(SIGINT, clearResources);
 
@@ -222,7 +223,9 @@ int main(int argc, char *argv[])
             clk2 = now;
             timePassed++;
         }
+        ///////////////////////////////
         // 1 - Highest Priority first
+        ///////////////////////////////
         if (mode == 1)
         {
             /* receive the messages from the process_generator */
@@ -248,7 +251,11 @@ int main(int argc, char *argv[])
                 currentProcess = newNode(tempnode.data);
                 currentProcess->pid = tempnode.pid;
                 int waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
-                printf("At time %d process %d started arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
+                
+                logFile = fopen("scheduler.log", "a+");
+                fprintf(logFile, "At time %d process %d started arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
+                fclose(logFile);
+
                 int pid = fork();
                 if (pid == 0)
                 {
@@ -264,8 +271,9 @@ int main(int argc, char *argv[])
                 RunningFlag = true;
             }
         }
-
+        ///////////////////
         // 2 - SRTN
+        ///////////////////
         else if (mode == 2)
         {
             /* receive the messages from the process_generator */
@@ -290,7 +298,11 @@ int main(int argc, char *argv[])
                     // Send to the current to sleep
                     kill(currentProcess->pid, SIGUSR1);
                     int waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
-                    printf("At time %d process %d stopped arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
+                    
+                    logFile = fopen("scheduler.log", "a+");
+                    fprintf(logFile, "At time %d process %d stopped arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
+                    fclose(logFile);
+                    
                     Node *temp = newNode(currentProcess->data);
                     temp->pid = currentProcess->pid;
                     if (isEmpty(&head))
@@ -308,7 +320,11 @@ int main(int argc, char *argv[])
                     currentProcess->pid = tempnode.pid;
                     currentProcess->data.is_running = true;
                     waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
-                    printf("At time %d process %d started arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
+                    
+                    logFile = fopen("scheduler.log", "a+");
+                    fprintf(logFile, "At time %d process %d started arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
+                    fclose(logFile);
+
                     int pid = fork();
                     if (pid == 0)
                     {
@@ -332,14 +348,22 @@ int main(int argc, char *argv[])
                 if (currentProcess->data.is_running == true)
                 {
                     int waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
-                    printf("At time %d process %d resumed arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
+                    
+                    logFile = fopen("scheduler.log", "a+");
+                    fprintf(logFile, "At time %d process %d resumed arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
+                    fclose(logFile);
+                    
                     kill(currentProcess->pid, SIGCONT);
                 }
                 else
                 {
                     currentProcess->data.is_running = true;
                     int waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
-                    printf("At time %d process %d started arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
+                    
+                    logFile = fopen("scheduler.log", "a+");
+                    fprintf(logFile, "At time %d process %d started arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
+                    fclose(logFile);
+                    
                     int pid = fork();
                     if (pid == 0)
                     {
@@ -357,8 +381,9 @@ int main(int argc, char *argv[])
                 RunningFlag = true;
             }
         }
-
+        /////////////////////////
         // 3- Round Robin
+        /////////////////////////
         else
         {
             /* receive the messages from the process_generator */
@@ -392,7 +417,11 @@ int main(int argc, char *argv[])
                     {
                         kill(currentProcess->pid, SIGUSR1);
                         int waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
-                        printf("At time %d process %d stopped arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
+                        
+                        logFile = fopen("scheduler.log", "a+");
+                        fprintf(logFile, "At time %d process %d stopped arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
+                        fclose(logFile);
+
                         Node *temp = newNode(currentProcess->data);
                         temp->pid = currentProcess->pid;
                         
@@ -416,14 +445,22 @@ int main(int argc, char *argv[])
                     if (currentProcess->data.is_running == true)
                     {
                         int waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
-                        printf("At time %d process %d resumed arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
+                        
+                        logFile = fopen("scheduler.log", "a+");
+                        fprintf(logFile, "At time %d process %d resumed arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
+                        fclose(logFile);
+                        
                         kill(currentProcess->pid, SIGCONT);
                     }
                     else
                     {
                         currentProcess->data.is_running = true;
                         int waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
-                        printf("At time %d process %d started arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
+                        
+                        logFile = fopen("scheduler.log", "a+");
+                        fprintf(logFile, "At time %d process %d started arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
+                        fclose(logFile);
+                        
                         int pid = fork();
                         if (pid == 0)
                         {
@@ -462,7 +499,12 @@ void TerminateSched () {
         SD += (WTAnums[i] - mean) * (WTAnums[i] - mean);
     SD = sqrt(SD/numberOfTotalProc);
 
-    printf("CPU utilization = 100%% \nAvg WTA = %.2f \nAvg Waiting = %.2f \nStd WTA = %.2f \n",mean,avgWT,SD);
+    FILE* prefFile;
+    prefFile = fopen("scheduler.perf", "w+"); 
+    fprintf(prefFile, "CPU utilization = 100%% \nAvg WTA = %.2f \nAvg Waiting = %.2f \nStd WTA = %.2f \n",mean,avgWT,SD);
+    fclose(prefFile);
+    //fclose(logFile);
+
     kill(getppid(),SIGINT);
     exit(0);
 }

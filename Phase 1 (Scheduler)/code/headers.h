@@ -101,3 +101,14 @@ typedef struct msgrembuff
     long mtype;
     int data;
 }msgrembuff;
+
+// Node
+typedef struct Node
+{
+
+    struct processData data;
+    struct Node *next;
+    int pid;
+
+} Node;
+
