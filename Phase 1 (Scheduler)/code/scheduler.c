@@ -3,7 +3,7 @@
 
 // Global Variables
 FILE *logFile;
-int timePassed = 0;
+int timePassed = 0, idleTime = 0;
 int numberOfTotalProc, numberOfFinishedProc = 0;
 int totalWT = 0;
 int msgq_id, msgq_id2, msgq_id3;
@@ -219,6 +219,8 @@ int main(int argc, char *argv[])
                     msgrcv(msgq_id3, &msgrem2, sizeof(msgrem2.data), 1, !IPC_NOWAIT);
                 }
 
+            }else{
+                idleTime ++;
             }
             clk2 = now;
             timePassed++;
@@ -488,6 +490,7 @@ int main(int argc, char *argv[])
 
 void TerminateSched () {
     float avgWT = (float)totalWT / numberOfTotalProc;
+    
     //Calc Standard deviation
     float sum = 0.0, mean, SD = 0.0;
     int i;
@@ -495,13 +498,17 @@ void TerminateSched () {
         sum += WTAnums[i];
     }
     mean = sum / numberOfTotalProc;
+
     for (i = 0; i < numberOfTotalProc; ++i)
         SD += (WTAnums[i] - mean) * (WTAnums[i] - mean);
     SD = sqrt(SD/numberOfTotalProc);
 
+    int totalTime = getClk();
+    float cpuUtilization = 100.0 * (totalTime - idleTime) / totalTime;
+
     FILE* prefFile;
     prefFile = fopen("scheduler.perf", "w+"); 
-    fprintf(prefFile, "CPU utilization = 100%% \nAvg WTA = %.2f \nAvg Waiting = %.2f \nStd WTA = %.2f \n",mean,avgWT,SD);
+    fprintf(prefFile, "CPU utilization = %.2f%% \nAvg WTA = %.2f \nAvg Waiting = %.2f \nStd WTA = %.2f \n",cpuUtilization,mean,avgWT,SD);
     fclose(prefFile);
     //fclose(logFile);
 

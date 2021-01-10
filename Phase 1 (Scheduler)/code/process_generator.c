@@ -51,7 +51,7 @@ int main(int argc, char *argv[])
     fclose(pFile);
 
     // 2. Ask the user for the chosen scheduling algorithm and its parameters, if there are any.
-    int quantum, mode;
+    int quantum = 0, mode;
 
     printf("\n1- HPF\n2- SRTN\n3- RR\n");
     printf("Enter Scheduling mode(1/2/3): ");
