@@ -22,13 +22,6 @@ union Semun
     void* __pad;
 };
 
-struct message_
-{
-    long type;
-    int message;
-};
-
-typedef struct message_ Message;
 
 int createSharedMemory(int bufferSize, char identifier);
 
@@ -36,9 +29,7 @@ void* attachSharedMemory(int sharedMemoryId);
 
 int createSemaphore(int value, char identifier);
 
-int createMessageQueue(char identifier);
-
-void produceItem(int* buffer, int bufferSize, int* numberOfElements);
+void produceItem(int* buffer, int* numberOfElements, int* addressProduceLocation, int* addressProduceItem);
 
 void up(int semaphore);
 
@@ -46,21 +37,42 @@ void down(int semaphore);
 
 void signalHandler(int signum);
 
-int getBufferSize(int bufferSizeMessageQueueId);
+int IsSharedMemoryNotCreated(int bufferSize, char identifier);
+
 
 int bufferSharedId;
 int numberOfElementsSharedId;
 int sleepWakeupMessageQueueId;
 int bufferSizeMessageQueueId;
-int semaphore;
+int prodLocSharedId;
+int produceLocMessageQueueId;
+int prodItemSharedId;
+int initSem;
+
+int bufferSize = 10;
+
+int createSemaphore(int value, char identifier);
+int mutex,empty,full;
+
 
 int main()
 {
     signal(SIGINT, signalHandler);
 
-    bufferSizeMessageQueueId = createMessageQueue('b');
-    int bufferSize = getBufferSize(bufferSizeMessageQueueId);
-    printf("[Info] Buffer Size = %d\n", bufferSize);
+    mutex = createSemaphore(1, 'm');
+    empty = createSemaphore(bufferSize, 'e');
+    full = createSemaphore(0, 'f');
+    initSem = createSemaphore(1, 'z');
+
+    down(initSem);
+
+    int isNotCreated = IsSharedMemoryNotCreated(sizeof(int), 'p');
+
+    prodLocSharedId = createSharedMemory(sizeof(int), 'p');
+    int* sharedProdLoc = attachSharedMemory(prodLocSharedId);
+
+    prodItemSharedId = createSharedMemory(sizeof(int), 'i');
+    int* sharedItemLoc = attachSharedMemory(prodItemSharedId);
 
     bufferSharedId = createSharedMemory(bufferSize, 'b');
     int* sharedBuffer = attachSharedMemory(bufferSharedId);
@@ -68,115 +80,63 @@ int main()
     numberOfElementsSharedId = createSharedMemory(sizeof(int), 'n');
     int* numberOfElements = attachSharedMemory(numberOfElementsSharedId);
 
-    semaphore = createSemaphore(1, 's');
-
-    sleepWakeupMessageQueueId = createMessageQueue('m');
-
-    while (1)
+    if (isNotCreated == 1)
     {
-        down(semaphore);
-        // If buffer empty
-        if (*numberOfElements == 0)
-        {
-            produceItem(sharedBuffer, bufferSize, numberOfElements);
-
-            Message message;
-            message.type = 'p';
-
-            int sendingStatus = msgsnd(sleepWakeupMessageQueueId, &message, sizeof(message.message), !IPC_NOWAIT);
-
-            if (sendingStatus == -1)
-                perror("Error in send");
-
-            if (bufferSize == 1)
-            {
-                message.type = 'c';
-
-                up(semaphore);
-
-                int receivingStatus = msgrcv(sleepWakeupMessageQueueId, &message, sizeof(message.message), message.type, !IPC_NOWAIT);
-                if (receivingStatus == -1)
-                    perror("Error in receive");
-            }
-
-        }
-        if (bufferSize != 1)
-        {
-            up(semaphore);
-        }
-
-
-        down(semaphore);
-        if (*numberOfElements == bufferSize)
-        {
-            Message message;
-            message.type = 'c'; /* arbitrary value */
-
-            up(semaphore);
-            int receivingStatus = msgrcv(sleepWakeupMessageQueueId, &message, sizeof(message.message), message.type, !IPC_NOWAIT);
-
-            if (receivingStatus == -1)
-                perror("Error in receive");
-        }
-        else
-        {
-            up(semaphore);
-        }
-
-        down(semaphore);
-        if (*numberOfElements != 0 && *numberOfElements != bufferSize)
-        {
-            produceItem(sharedBuffer, bufferSize, numberOfElements);
-        }
-        up(semaphore);
-
-        // sleep(1);
+        *sharedProdLoc = 0;
+        *sharedItemLoc = 0;
+        *numberOfElements = 0;
     }
 
-    return 0;
+    up(initSem);
+
+    while(1)
+    {
+        down(empty);
+        down(mutex);
+        produceItem(sharedBuffer,numberOfElements,sharedProdLoc,sharedItemLoc);
+        up(mutex);
+        up(full);
+
+    }
+
 }
 
-int getBufferSize(int bufferSizeMessageQueueId)
+int createSemaphore(int value, char identifier)
 {
-    int bufferSize = -1;
-    Message message;
-    message.type = 'c';
-    // Check if we received the buffer size but do not wait for it
-    int receivingStatus = msgrcv(bufferSizeMessageQueueId, &message, sizeof(message.message), message.type, IPC_NOWAIT);
-    if (receivingStatus == -1) // if we didn't receive anything
-    {
-        printf("Please Enter Buffer Size: ");
-        scanf("%d", &bufferSize);
+    union Semun semun;
+    key_t keyToken = ftok("keyfile", identifier);
 
-        message.type = 'p';
-        message.message = bufferSize;
-        int sendingStatus = msgsnd(bufferSizeMessageQueueId, &message, sizeof(message.message), !IPC_NOWAIT);
-        if (sendingStatus == -1)
-        {
-            perror("Error in sending buffer size");
-            exit(-1);
-        }
-    }
-    else
+    int semaphore = semget(keyToken, 1, 0666 | IPC_CREAT | IPC_EXCL);
+
+    if (semaphore == -1)
     {
-        bufferSize = message.message;
+        return semget(keyToken, 1, 0666 | IPC_CREAT);;
     }
-    return bufferSize;
+
+    semun.value = value;
+    if (semctl(semaphore, 0, SETVAL, semun) == -1)
+    {
+        perror("Error in creating semaphore");
+        exit(-1);
+    }
+
+    return semaphore;
 }
 
-void produceItem(int* buffer, int bufferSize, int* numberOfElements)
+void produceItem(int* buffer, int* numberOfElements, int* addressProduceLocation, int* addressProduceItem)
 {
-    static int item = 0;
-    static int produceLocation = 0;
+    int item = *addressProduceItem;
+    int produceLocation = *addressProduceLocation;
 
     buffer[produceLocation] = item;
     produceLocation = (produceLocation + 1) % bufferSize;
+    *addressProduceLocation = produceLocation;
 
     (*numberOfElements)++;
 
     printf("[Producer] Inserted %d\n", item);
 
-    item++;
+    (*addressProduceItem)++;
 }
 
 int createSharedMemory(int bufferSize, char identifier)
@@ -205,41 +165,18 @@ void* attachSharedMemory(int sharedMemoryId)
     return sharedMemoryAddress;
 }
 
-int createSemaphore(int value, char identifier)
+int IsSharedMemoryNotCreated(int bufferSize, char identifier)
 {
-    union Semun semun;
-    key_t keyToken = ftok("keyfile", identifier);
+    // Create shared memory with size = bufferSize
+    key_t key_id_shared = ftok("keyfile", identifier);
+    int sharedMemoryId = shmget(key_id_shared, bufferSize * sizeof(int), IPC_CREAT | 0666 | IPC_EXCL);
 
-    int semaphore = semget(keyToken, 1, 0666 | IPC_CREAT | IPC_EXCL);
-
-    if (semaphore == -1)
+    if (sharedMemoryId == -1)
     {
-        return semget(keyToken, 1, 0666 | IPC_CREAT);;
+        return 0;
     }
 
-    semun.value = value;
-    if (semctl(semaphore, 0, SETVAL, semun) == -1)
-    {
-        perror("Error in creating semaphore");
-        exit(-1);
-    }
-
-    return semaphore;
-}
-
-int createMessageQueue(char identifier)
-{
-
-    key_t keyToken = ftok("keyfile", identifier);
-    int messageQueueId = msgget(keyToken, 0666 | IPC_CREAT);
-
-    if (messageQueueId == -1)
-    {
-        perror("Error in creating Message Queue");
-        exit(-1);
-    }
-
-    return messageQueueId;
+    return 1;
 }
 
 void down(int semaphore)
@@ -275,11 +212,18 @@ void up(int semaphore)
 void signalHandler(int signum)
 {
     printf("\nCaptured Ctrl+C , Freeing Resources\n");
-    msgctl(sleepWakeupMessageQueueId, IPC_RMID, NULL);
-    msgctl(bufferSizeMessageQueueId, IPC_RMID, NULL);
+    int consumeLocSharedId = createSharedMemory(sizeof(int), 'c');
+    int initSemConsumer = createSemaphore(1, 'x');
     shmctl(bufferSharedId, IPC_RMID, NULL);
+    shmctl(prodLocSharedId, IPC_RMID, NULL);
+    shmctl(prodItemSharedId, IPC_RMID, NULL);
     shmctl(numberOfElementsSharedId, IPC_RMID, NULL);
-    semctl(semaphore, 0, IPC_RMID, NULL);
+    semctl(initSem, 0, IPC_RMID, NULL);
+    semctl(empty, 0, IPC_RMID, NULL);
+    semctl(full, 0, IPC_RMID, NULL);
+    semctl(mutex, 0, IPC_RMID, NULL);
+    shmctl(consumeLocSharedId, IPC_RMID, NULL);
+    semctl(initSemConsumer, 0, IPC_RMID, NULL);
 
     exit(0);
 }
