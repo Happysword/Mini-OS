@@ -72,6 +72,13 @@ void destroyClk(bool terminateAll)
  *
 */
 
+typedef struct pair
+{
+    int start;
+    int end;
+    struct pair *next;
+}pair;
+
 typedef struct processData
 {
     int arrivaltime;
@@ -79,6 +86,7 @@ typedef struct processData
     int runningtime;
     int id;
     int remainingtime;
+    int memsize;
     bool is_running;
 }processData;
 
@@ -109,6 +117,14 @@ typedef struct Node
     struct processData data;
     struct Node *next;
     int pid;
-
+    pair *allocatedMem;
 } Node;
 
+
+/*
+typedef struct element
+{
+    pair data;
+    element * next;
+}element;
+*/
