@@ -113,7 +113,6 @@ typedef struct msgrembuff
 // Node
 typedef struct Node
 {
-
     struct processData data;
     struct Node *next;
     int pid;

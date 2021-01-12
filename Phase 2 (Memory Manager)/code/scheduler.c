@@ -140,6 +140,9 @@ void handlerChildTermination(int sigNum)
     RunningFlag = false;
     timePassed = 0;
 
+    //Deallocate the Memory
+    deallocate(currentProcess->allocatedMem);
+
     //Calculate Total Stats
     numberOfFinishedProc++;
     totalWT += waittime;
@@ -161,6 +164,11 @@ int main(int argc, char *argv[])
     fprintf(logFile, "#At time x process y state arr w toal z remain y wait k\n");
     fclose(logFile);
     
+    logFile = fopen("memory.log", "w+");
+    fprintf(logFile, "#At time x allocated y bytes for process z from i to j\n");
+    fclose(logFile);
+    
+
     initClk();
     clearFreeList();
     
@@ -255,6 +263,10 @@ int main(int argc, char *argv[])
                 if(allocatedMem != NULL)
                 {
                     printf("At time %d allocated %d bytes for process %d from %d to %d\n", getClk(), message.data.memsize, message.data.id, allocatedMem->start, allocatedMem->end);
+                    logFile = fopen("memory.log", "a+");
+                    fprintf(logFile,"At time %d allocated %d bytes for process %d from %d to %d\n", getClk(), message.data.memsize, message.data.id, allocatedMem->start, allocatedMem->end);
+                    fclose(logFile);
+                    
                     if (isEmpty(&head))
                     {
                         head = newNode(message.data);
@@ -323,6 +335,9 @@ int main(int argc, char *argv[])
                 if(allocatedMem != NULL)
                 {
                     printf("At time %d allocated %d bytes for process %d from %d to %d\n", getClk(), message.data.memsize, message.data.id, allocatedMem->start, allocatedMem->end);
+                    logFile = fopen("memory.log", "a+");
+                    fprintf(logFile,"At time %d allocated %d bytes for process %d from %d to %d\n", getClk(), message.data.memsize, message.data.id, allocatedMem->start, allocatedMem->end);
+                    fclose(logFile);
 
                     if (isEmpty(&head))
                     {
@@ -350,6 +365,7 @@ int main(int argc, char *argv[])
                         
                         Node *temp = newNode(currentProcess->data);
                         temp->pid = currentProcess->pid;
+                        temp->allocatedMem = currentProcess->allocatedMem;
                         if (isEmpty(&head))
                         {
                             head = temp;
@@ -364,6 +380,7 @@ int main(int argc, char *argv[])
                         currentProcess = newNode(tempnode.data);
                         currentProcess->pid = tempnode.pid;
                         currentProcess->data.is_running = true;
+                        currentProcess->allocatedMem = tempnode.allocatedMem;
                         waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
                         
                         logFile = fopen("scheduler.log", "a+");
@@ -403,6 +420,7 @@ int main(int argc, char *argv[])
                 struct Node tempnode = pop(&head);
                 currentProcess = newNode(tempnode.data);
                 currentProcess->pid = tempnode.pid;
+                currentProcess->allocatedMem = tempnode.allocatedMem;
                 if (currentProcess->data.is_running == true)
                 {
                     int waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
@@ -454,6 +472,10 @@ int main(int argc, char *argv[])
                 if(allocatedMem != NULL)
                 {
                     printf("At time %d allocated %d bytes for process %d from %d to %d\n", getClk(), message.data.memsize, message.data.id, allocatedMem->start, allocatedMem->end);
+                    logFile = fopen("memory.log", "a+");
+                    fprintf(logFile,"At time %d allocated %d bytes for process %d from %d to %d\n", getClk(), message.data.memsize, message.data.id, allocatedMem->start, allocatedMem->end);
+                    fclose(logFile);
+                    
                     if (isEmpty(&head))
                     {
                         head = newNode(message.data);
@@ -501,6 +523,7 @@ int main(int argc, char *argv[])
 
                         Node *temp = newNode(currentProcess->data);
                         temp->pid = currentProcess->pid;
+                        temp->allocatedMem = currentProcess->allocatedMem;
                         
                         if (isEmpty(&head))
                         {
@@ -519,6 +542,7 @@ int main(int argc, char *argv[])
                         tail = NULL;
                     currentProcess = newNode(tempnode.data);
                     currentProcess->pid = tempnode.pid;
+                    currentProcess->allocatedMem = tempnode.allocatedMem;
                     if (currentProcess->data.is_running == true)
                     {
                         int waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
@@ -677,4 +701,112 @@ pair* allocate(int memsize){
         temp = firstPair;
     }
     return temp;
+}
+
+void deallocate(pair* freePair) 
+{
+    // Size of block to be searched 
+    int n = (int) ceil(log2(freePair->end-freePair->start));
+    int i, buddyNumber, buddyAddress; 
+
+    printf("At time %d freed %d bytes for process %d from %d to %d\n",getClk(),currentProcess->data.memsize,currentProcess->data.id,freePair->start,freePair->end);
+    logFile = fopen("memory.log", "a+");
+    fprintf(logFile,"At time %d freed %d bytes for process %d from %d to %d\n",getClk(),currentProcess->data.memsize,currentProcess->data.id,freePair->start,freePair->end);
+    fclose(logFile);
+    
+    pushPair(&freeList[n], freePair);
+
+    bool flag;
+    pair* newValue = freePair;
+    
+    for (int i = n; i < 11; i++)
+    {
+        flag = true;
+        freePair = newValue;
+        // Calculate buddy number 
+        buddyNumber = freePair->start / (freePair->end-freePair->start+1) ;  
+        if (buddyNumber % 2 != 0) 
+            buddyAddress = freePair->start - pow(2, i); 
+        else
+            buddyAddress = freePair->start + pow(2, i); 
+
+        
+        pair* temp = freeList[i];
+        while( temp!=NULL )  
+        { 
+            // If buddy found and is also free 
+            if (temp->start == buddyAddress)  
+            { 
+                flag = false;
+                
+                // Merge the buddies 
+                if (buddyNumber % 2 == 0) 
+                { 
+                    pair* nPair = newPair(freePair->start, freePair->start + (pow(2, i+1) - 1 ) );
+                    pushPair(&freeList[i + 1], nPair); 
+                    // printf("Merged Memory from %d to %d\n",nPair->start,nPair->end);
+                    newValue = nPair;
+                } 
+                else
+                { 
+                    pair* nPair = newPair(buddyAddress, buddyAddress + (pow(2, i+1) - 1)); 
+                    pushPair(&freeList[i + 1], nPair); 
+                    // printf("Merged Memory from %d to %d\n",nPair->start,nPair->end);
+                    newValue = nPair;
+                } 
+                
+                //Erase the Allocated memory Find the parent to set next with NULL
+                pair* parentOfTemp = freeList[i];
+                while (parentOfTemp->next != freePair)
+                {
+                    parentOfTemp = parentOfTemp->next;
+                }
+                parentOfTemp->next = freePair->next;
+                free(freePair);
+                freePair = NULL;
+
+                // Find the parent of the buddy to remove correctly by merging it
+
+                parentOfTemp = freeList[i];
+                if (parentOfTemp != temp)
+                {
+                    while (parentOfTemp->next != temp)
+                    {
+                        parentOfTemp = parentOfTemp->next;
+                    }
+                    
+                    // Merge the parent of temp with the next of temp and Erase temp
+                    parentOfTemp->next = temp->next;
+                    free(temp);
+                    temp = NULL;
+                    break; 
+                }
+                else
+                {
+                    freeList[i] = temp->next;
+                    free(temp);
+                    temp = NULL;
+                    break;
+                }
+                
+                
+            }
+            temp = temp->next;
+        }
+        if (flag == true) break;
+    }
+    
+    
+    // for (int i = 0; i < 11; i++)
+    // {
+    //     pair* temp = freeList[i];
+    //     printf("i = %d ",i);
+    //     while (temp != NULL)
+    //     {
+    //         printf("from:%d to:%d ",temp->start,temp->end);
+    //         temp = temp->next;
+    //     }
+    //     printf("\n");
+    // }
+    
 }
