@@ -258,10 +258,12 @@ int main(int argc, char *argv[])
                     if (isEmpty(&head))
                     {
                         head = newNode(message.data);
+                        head->allocatedMem = allocatedMem;
                     }
                     else
                     {
                         Node *temp = newNode(message.data);
+                        temp->allocatedMem = allocatedMem;
                         insertSorted(&head, temp, 1);
                     }
                 }else
@@ -325,10 +327,12 @@ int main(int argc, char *argv[])
                     if (isEmpty(&head))
                     {
                         head = newNode(message.data);
+                        head->allocatedMem = allocatedMem;
                     }
                     else
                     {
                         Node *temp = newNode(message.data);
+                        temp->allocatedMem = allocatedMem;
                         insertSorted(&head, temp, 0);
                     }
                     
@@ -453,11 +457,13 @@ int main(int argc, char *argv[])
                     if (isEmpty(&head))
                     {
                         head = newNode(message.data);
+                        head->allocatedMem = allocatedMem;
                         tail = head;
                     }
                     else
                     {
                         Node *temp = newNode(message.data);
+                        temp->allocatedMem = allocatedMem;
                         push(&tail, temp);
                     }
                 }else
