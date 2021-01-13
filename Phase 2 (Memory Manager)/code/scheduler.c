@@ -432,7 +432,7 @@ int main(int argc, char *argv[])
                         }
                         RunningFlag = true;
                     }else{
-                        push(&waitingHead,&waitingTail,currentProcess);
+                        insertSorted(&waitingHead,currentProcess,0);
                     }
                 }
 
@@ -776,10 +776,33 @@ void deallocate(pair* freePair)
 
 void tryToAllocate(){
     
-    //Round robin
-    if(mode == 2 || mode == 3) 
+    // SRTN
+    if(mode == 2) 
     {
         if (!isEmpty(&waitingHead))
+        {
+            if(isEmpty(&head) || waitingHead->data.remainingtime < head->data.remainingtime)
+            {
+                pair* allocatedMem = allocate(waitingHead->data.memsize);
+                if (allocatedMem != NULL)
+                {
+                    //pop from waiting list
+                    struct Node tempnode = pop(&waitingHead);
+                    if (isEmpty(&waitingHead))
+                        waitingTail = NULL;
+
+                    //push to regular Queue
+                    Node *temp = newNode(tempnode.data, tempnode.pid, allocatedMem, NULL);
+                    insertSorted(&head, temp, 0);
+                }  
+            } 
+        }
+    }
+
+    //Round robin
+    else if(mode == 3) 
+    {
+        while (!isEmpty(&waitingHead))
         {
             pair* allocatedMem = allocate(waitingHead->data.memsize);
             if (allocatedMem != NULL)
@@ -791,9 +814,10 @@ void tryToAllocate(){
 
                 //push to regular list
                 Node *temp = newNode(tempnode.data, tempnode.pid, allocatedMem, NULL);
-                if(mode == 2) insertSorted(&head, temp, 0);
-                else push(&head, &tail, temp);
-            }   
+                push(&head, &tail, temp);
+            }else{
+                break;
+            } 
         }
     }  
 }
