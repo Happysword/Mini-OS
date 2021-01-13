@@ -11,6 +11,7 @@ bool RunningFlag = false;
 Node *currentProcess;
 float* WTAnums;
 
+// Functions Prototypes
 void TerminateSched();
 void clearResources(int);
 
@@ -23,16 +24,30 @@ void clearResources(int);
  *****************************
 */
 
-// Constructor for a New Node
-Node *newNode(struct processData data)
+
+/*
+* Constructor for a New Node
+*/
+Node *newNode(struct processData data, int pid, Node* next)
 {
     Node *temp = (Node *)malloc(sizeof(Node));
     temp->data = data;
-    temp->next = NULL;
-    temp->pid = -1;
+    temp->next = next;
+    temp->pid = pid;
     return temp;
 }
 
+/*
+* Function to check is list is empty
+*/
+int isEmpty(Node **head)
+{
+    return (*head) == NULL;
+}
+
+/*
+* Function to pop from the top of the queue
+*/
 struct Node pop(Node **head)
 {
     Node *temp = *head;
@@ -42,9 +57,15 @@ struct Node pop(Node **head)
     return tempnode;
 }
 
-// Function to push according to priority
+/*
+* Function to push according to priority or remaining time
+*/ 
 void insertSorted(Node **head, Node *data, bool option)
 {
+    if(isEmpty(head)){
+        *head = data;
+        return;
+    }
     Node *start = *head;
 
     // Create new Node
@@ -94,19 +115,20 @@ void insertSorted(Node **head, Node *data, bool option)
     }
 }
 
-void push(Node **tail, Node *data)
+/*
+* Push to the end of the queue
+*/
+void push(Node **head, Node **tail, Node *data)
 {
-    // Create new Node
-    Node *temp = data;
-
-    (*tail)->next = temp;
-    *tail = temp;
-}
-
-// Function to check is list is empty
-int isEmpty(Node **head)
-{
-    return (*head) == NULL;
+    if (isEmpty(head))
+    {
+        *head = data;
+        *tail = *head;
+    }else
+    {
+        (*tail)->next = data;
+        *tail = data;
+    }
 }
 
 // when a process finishes its job it sends signal to the schedular
@@ -138,7 +160,10 @@ void handlerChildTermination(int sigNum)
 
 }
 
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /**********************************************************MAIN************************************************************************************/
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char *argv[])
 {
@@ -225,9 +250,10 @@ int main(int argc, char *argv[])
             clk2 = now;
             timePassed++;
         }
-        ///////////////////////////////
+
+        ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
         // 1 - Highest Priority first
-        ///////////////////////////////
+        ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
         if (mode == 1)
         {
             /* receive the messages from the process_generator */
@@ -236,22 +262,17 @@ int main(int argc, char *argv[])
             // if we recieve a message
             if (rec_val != -1)
             {
-                if (isEmpty(&head))
-                {
-                    head = newNode(message.data);
-                }
-                else
-                {
-                    Node *temp = newNode(message.data);
-                    insertSorted(&head, temp, 1);
-                }
+                
+                Node *temp = newNode(message.data, -1, NULL);
+                insertSorted(&head, temp, 1);
             }
 
+            // Run another process if there is no running one
             if (!RunningFlag && !isEmpty(&head))
             {
                 struct Node tempnode = pop(&head);
-                currentProcess = newNode(tempnode.data);
-                currentProcess->pid = tempnode.pid;
+                currentProcess = newNode(tempnode.data, tempnode.pid, NULL);
+
                 int waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
                 
                 logFile = fopen("scheduler.log", "a+");
@@ -273,9 +294,10 @@ int main(int argc, char *argv[])
                 RunningFlag = true;
             }
         }
-        ///////////////////
+
+        ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
         // 2 - SRTN
-        ///////////////////
+        ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
         else if (mode == 2)
         {
             /* receive the messages from the process_generator */
@@ -284,18 +306,12 @@ int main(int argc, char *argv[])
             // if we recieve a message
             if (rec_val != -1)
             {
-                if (isEmpty(&head))
-                {
-                    head = newNode(message.data);
-                }
-                else
-                {
-                    Node *temp = newNode(message.data);
-                    insertSorted(&head, temp, 0);
-                }
+                
+                Node *temp = newNode(message.data, -1, NULL);
+                insertSorted(&head, temp, 0);
 
                 // We compare the head to the current process if the head has lower time we switch
-                if (!isEmpty(&head) && currentProcess!=NULL && head->data.remainingtime < currentProcess->data.remainingtime)
+                if (currentProcess!=NULL && head->data.remainingtime < currentProcess->data.remainingtime)
                 {
                     // Send to the current to sleep
                     kill(currentProcess->pid, SIGUSR1);
@@ -305,22 +321,14 @@ int main(int argc, char *argv[])
                     fprintf(logFile, "At time %d process %d stopped arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
                     fclose(logFile);
                     
-                    Node *temp = newNode(currentProcess->data);
-                    temp->pid = currentProcess->pid;
-                    if (isEmpty(&head))
-                    {
-                        head = temp;
-                    }
-                    else
-                    {
-                        insertSorted(&head, temp, 0);
-                    }
+                    Node *temp = newNode(currentProcess->data, currentProcess->pid, NULL);
+                    insertSorted(&head, temp, 0);
 
                     // Start the new process
                     struct Node tempnode = pop(&head);
-                    currentProcess = newNode(tempnode.data);
-                    currentProcess->pid = tempnode.pid;
+                    currentProcess = newNode(tempnode.data, tempnode.pid, NULL);
                     currentProcess->data.is_running = true;
+
                     waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
                     
                     logFile = fopen("scheduler.log", "a+");
@@ -342,11 +350,13 @@ int main(int argc, char *argv[])
                 }
             }
 
+            // Run another process if there is no running process
             if (!RunningFlag && !isEmpty(&head))
             {
                 struct Node tempnode = pop(&head);
-                currentProcess = newNode(tempnode.data);
-                currentProcess->pid = tempnode.pid;
+                currentProcess = newNode(tempnode.data, tempnode.pid, NULL);
+
+                // Check if it was paused before
                 if (currentProcess->data.is_running == true)
                 {
                     int waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
@@ -383,9 +393,10 @@ int main(int argc, char *argv[])
                 RunningFlag = true;
             }
         }
-        /////////////////////////
+
+        ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
         // 3- Round Robin
-        /////////////////////////
+        ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
         else
         {
             /* receive the messages from the process_generator */
@@ -394,18 +405,12 @@ int main(int argc, char *argv[])
             // if we recieve a message
             if (rec_val != -1)
             {
-                if (isEmpty(&head))
-                {
-                    head = newNode(message.data);
-                    tail = head;
-                }
-                else
-                {
-                    Node *temp = newNode(message.data);
-                    push(&tail, temp);
-                }
+                
+                Node *temp = newNode(message.data, -1, NULL);
+                push(&head, &tail, temp);
             }
 
+            // If there is no running process or the quantem is over
             if (!RunningFlag || timePassed == quantum)
             {
 
@@ -424,26 +429,17 @@ int main(int argc, char *argv[])
                         fprintf(logFile, "At time %d process %d stopped arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
                         fclose(logFile);
 
-                        Node *temp = newNode(currentProcess->data);
-                        temp->pid = currentProcess->pid;
+                        Node *temp = newNode(currentProcess->data, currentProcess->pid, NULL);
+                        push(&head, &tail, temp);
                         
-                        if (isEmpty(&head))
-                        {
-                            head = temp;
-                            tail = head;
-                        }
-                        else
-                        {
-                            push(&tail, temp);
-                        }
                         RunningFlag = false;
                     }
 
                     struct Node tempnode = pop(&head);
                     if (isEmpty(&head))
                         tail = NULL;
-                    currentProcess = newNode(tempnode.data);
-                    currentProcess->pid = tempnode.pid;
+                    currentProcess = newNode(tempnode.data, tempnode.pid, NULL);
+
                     if (currentProcess->data.is_running == true)
                     {
                         int waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
@@ -487,7 +483,7 @@ int main(int argc, char *argv[])
     destroyClk(true);
 }
 
-
+// Calculate statistics for scheduler.pref file
 void TerminateSched () {
     float avgWT = (float)totalWT / numberOfTotalProc;
     
@@ -510,15 +506,14 @@ void TerminateSched () {
     prefFile = fopen("scheduler.perf", "w+"); 
     fprintf(prefFile, "CPU utilization = %.2f%% \nAvg WTA = %.2f \nAvg Waiting = %.2f \nStd WTA = %.2f \n",cpuUtilization,mean,avgWT,SD);
     fclose(prefFile);
-    //fclose(logFile);
 
     kill(getppid(),SIGINT);
     exit(0);
 }
 
+// Clears all resources in case of interruption
 void clearResources(int signum)
 {
-    //TODO Clears all resources in case of interruption
     msgctl(msgq_id2 , IPC_RMID, (struct msqid_ds *) 0);
     msgctl(msgq_id3 , IPC_RMID, (struct msqid_ds *) 0);
     exit(0);

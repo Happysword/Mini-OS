@@ -594,6 +594,9 @@ void TerminateSched () {
 // Clear all resources in case of interruption
 void clearResources(int signum)
 {
+    pair *temp = popPair(&freeList[10]);
+    free(temp);
+    temp = NULL;
     msgctl(msgq_id2 , IPC_RMID, (struct msqid_ds *) 0);
     msgctl(msgq_id3 , IPC_RMID, (struct msqid_ds *) 0);
     exit(0);
