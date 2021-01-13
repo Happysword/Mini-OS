@@ -7,7 +7,6 @@ processWrapper *head;
 int main(int argc, char *argv[])
 {
     signal(SIGINT, clearResources);
-    // TODO Initialization
 
     // 1. Read the input files.
     char fileName[256];
@@ -100,7 +99,6 @@ int main(int argc, char *argv[])
     // 4. Use this function after creating the clock process to initialize clock
     initClk();
 
-    // TODO Generation Main Loop
     // 5. Create a data structure for processes and provide it with its parameters.
     processWrapper *currentProcess = head;
     struct msgbuff message;
@@ -127,14 +125,14 @@ int main(int argc, char *argv[])
             currentProcess = currentProcess->next;
         }
     };
-    // 7. Clear clock resources
 
+    // 7. Clear clock resources
     destroyClk(true);
 }
 
+//Clear all resources in case of interruption
 void clearResources(int signum)
 {
-    //TODO Clears all resources in case of interruption
     msgctl(msgq_id , IPC_RMID, (struct msqid_ds *) 0);
     kill(pid[0], SIGINT);
     kill(pid[1], SIGINT);
