@@ -1,3 +1,8 @@
+#ifndef HEADERS
+#define HEADERS
+
+
+
 #include <stdio.h>      //if you don't use scanf/printf change this include
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -112,3 +117,4 @@ typedef struct Node
 
 } Node;
 
+#endif /* !FILE_FOO_SEEN */

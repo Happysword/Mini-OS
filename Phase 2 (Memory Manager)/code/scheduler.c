@@ -1,141 +1,48 @@
-#include "headers.h"
-#include <math.h>
+#include "memory.c"
 
-// Global Variables
-FILE *logFile;
-int timePassed = 0, idleTime = 0;
-int numberOfTotalProc, numberOfFinishedProc = 0;
-int totalWT = 0;
-int msgq_id, msgq_id2, msgq_id3;
-int mode;
-bool RunningFlag = false;
-Node *currentProcess;
-float* WTAnums;
-
-// Ready Queue
-Node *head = NULL;
-Node *tail = NULL;
-
-// Waiting queue
-Node* waitingHead = NULL;
-Node* waitingTail = NULL;
-
-// Head and tail of the linked list of pairs (Buddy system)
-pair *freeList[11];
-pair* newPair(int start, int end);
-void pushPair(pair **listHead, pair * newPair);
-pair* popPair(pair **listHead);
-void clearFreeList();
-pair* allocate(int memsize);
-void deallocate(pair* freePair);
-void tryToAllocate();
 
 // functions prototype
-void TerminateSched();
-void clearResources(int);
+void TerminateSched () {
+    float avgWT = (float)totalWT / numberOfTotalProc;
+    
+    //Calc Standard deviation
+    float sum = 0.0, mean, SD = 0.0;
+    int i;
+    for (i = 0; i < numberOfTotalProc; ++i) {
+        sum += WTAnums[i];
+    }
+    mean = sum / numberOfTotalProc;
 
+    for (i = 0; i < numberOfTotalProc; ++i)
+        SD += (WTAnums[i] - mean) * (WTAnums[i] - mean);
+    SD = sqrt(SD/numberOfTotalProc);
 
-/*****************************
- *****************************
- *      Priority Queue
- *          Queue
- *****************************
- *****************************
-*/
+    int totalTime = getClk();
+    float cpuUtilization = 100.0 * (totalTime - idleTime) / totalTime;
 
-// Constructor for a New Node
-Node *newNode(struct processData data, int pid, pair* allocatedMem, Node* next)
-{
-    Node *temp = (Node *)malloc(sizeof(Node));
-    temp->data = data;
-    temp->next = next;
-    temp->pid = pid;
-    temp->allocatedMem = allocatedMem;
-    return temp;
+    FILE* prefFile;
+    prefFile = fopen("scheduler.perf", "w+"); 
+    fprintf(prefFile, "CPU utilization = %.2f%% \nAvg WTA = %.2f \nAvg Waiting = %.2f \nStd WTA = %.2f \n",cpuUtilization,mean,avgWT,SD);
+    fclose(prefFile);
+
+    kill(getppid(),SIGINT);
+    exit(0);
 }
 
-// Function to check is list is empty
-int isEmpty(Node **head)
+// Clear all resources in case of interruption
+void clearResources(int signum)
 {
-    return (*head) == NULL;
-}
-
-struct Node pop(Node **head)
-{
-    Node *temp = *head;
-    *head = (*head)->next;
-    Node tempnode = *temp;
-    free(temp);
-    return tempnode;
-}
-
-// Function to push according to priority
-void insertSorted(Node **head, Node *data, bool option)
-{
-    if(isEmpty(head)){
-        *head = data;
-        return;
-    }
-    Node *start = *head;
-
-    // Create new Node
-    Node *temp = data;
-
-    // if the current Head has higher priority than inserted
-    // Then we make the new element the head
-    if (option == 1)
-    {
-        if ((*head)->data.priority > temp->data.priority)
-        {
-            temp->next = *head;
-            *head = temp;
-        }
-        // Else we traverse the Linked list until we find the suitable place for the node
-        else
-        {
-            while (start->next != NULL && start->next->data.priority <= temp->data.priority)
-            {
-                start = start->next;
-            }
-
-            // Found the Position
-            temp->next = start->next;
-            start->next = temp;
+    for(int i=0; i<11; i++){
+        while(freeList[i] != NULL){
+            pair *temp = popPair(&freeList[i]);
+            free(temp);
+            temp = NULL;
         }
     }
-    else
-    {
-        if ((*head)->data.remainingtime > temp->data.remainingtime)
-        {
-            temp->next = *head;
-            *head = temp;
-        }
-        // Else we traverse the Linked list until we find the suitable place for the node
-        else
-        {
-            while (start->next != NULL && start->next->data.remainingtime <= temp->data.remainingtime)
-            {
-                start = start->next;
-            }
-
-            // Found the Position
-            temp->next = start->next;
-            start->next = temp;
-        }
-    }
-}
-
-void push(Node **head, Node **tail, Node *data)
-{
-    if (isEmpty(head))
-    {
-        *head = data;
-        *tail = *head;
-    }else
-    {
-        (*tail)->next = data;
-        *tail = data;
-    }
+    
+    msgctl(msgq_id2 , IPC_RMID, (struct msqid_ds *) 0);
+    msgctl(msgq_id3 , IPC_RMID, (struct msqid_ds *) 0);
+    exit(0);
 }
 
 
@@ -149,10 +56,12 @@ void handlerChildTermination(int sigNum)
     float wtatime = (float)tatime / currentProcess->data.runningtime;
     if (currentProcess->data.runningtime == 0) wtatime = 0;
     
+    // We log the values to file
     logFile = fopen("scheduler.log", "a+");
     fprintf(logFile, "At time %d process %d finished arr %d total %d remain %d wait %d TA %d WTA %.2f\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime,tatime,wtatime);
     fclose(logFile);
 
+    // Reset the values to start a new process
     RunningFlag = false;
     timePassed = 0;
 
@@ -171,6 +80,324 @@ void handlerChildTermination(int sigNum)
     currentProcess = NULL;
 
 }
+
+
+
+// Highest Priority Mode
+void Highest_Priority_first() {
+
+    /* receive the messages from the process_generator */
+    rec_val = msgrcv(msgq_id, &message, sizeof(message.data), processMessagetype, IPC_NOWAIT);
+
+    // if we recieve a message
+    if (rec_val != -1)
+    { 
+        Node *temp = newNode(message.data, -1, NULL, NULL);
+        insertSorted(&head, temp, 1);
+        
+    }
+
+    // Run the highest priority process if there is no running one
+    if (!RunningFlag && !isEmpty(&head))
+    {    
+        struct Node tempnode = pop(&head);
+        currentProcess = newNode(tempnode.data,tempnode.pid, NULL, NULL);
+        int waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
+
+        //Memory Allocation
+        pair* allocatedMem = allocate(currentProcess->data.memsize);
+        currentProcess->allocatedMem = allocatedMem;
+        
+        logFile = fopen("memory.log", "a+");
+        fprintf(logFile,"At time %d allocated %d bytes for process %d from %d to %d\n", getClk(), message.data.memsize, message.data.id, allocatedMem->start, allocatedMem->end);
+        fclose(logFile);
+        
+        logFile = fopen("scheduler.log", "a+");
+        fprintf(logFile, "At time %d process %d started arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
+        fclose(logFile);
+
+        int pid = fork();
+        if (pid == 0)
+        {
+            char remchar[5];
+            sprintf(remchar, "%d", currentProcess->data.remainingtime);
+            char *path[] = {"./process.out", remchar, NULL};
+            execv(path[0], path);
+        }
+        else
+        {
+            currentProcess->pid = pid;
+        }
+        RunningFlag = true;
+    }
+
+}
+
+
+// Shortest Runtime Mode
+void Shortest_Runtime_Next() {
+
+    /* receive the messages from the process_generator */
+    rec_val = msgrcv(msgq_id, &message, sizeof(message.data), processMessagetype, IPC_NOWAIT);
+
+    // if we recieve a message
+    if (rec_val != -1)
+    {
+        Node *temp = newNode(message.data, -1, NULL, NULL);
+        
+        // We compare the head to the current process if the head has lower time we switch
+        if (currentProcess!=NULL && temp->data.remainingtime < currentProcess->data.remainingtime)
+        {
+            pair* allocatedMem = allocate(temp->data.memsize);
+
+            // If we can allocate the memory to the process we stop the current process and we fork the new one and start it
+            if(allocatedMem != NULL)
+            {   
+                temp->allocatedMem = allocatedMem;
+                logFile = fopen("memory.log", "a+");
+                fprintf(logFile,"At time %d allocated %d bytes for process %d from %d to %d\n", getClk(), temp->data.memsize, temp->data.id, allocatedMem->start, allocatedMem->end);
+                fclose(logFile);
+
+                // Send to the current to sleep
+                kill(currentProcess->pid, SIGUSR1);
+                int waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
+                
+                logFile = fopen("scheduler.log", "a+");
+                fprintf(logFile, "At time %d process %d stopped arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
+                fclose(logFile);
+                
+                Node *temp2 = newNode(currentProcess->data,currentProcess->pid, currentProcess->allocatedMem, NULL);
+                
+                insertSorted(&head, temp2, 0);
+
+                // Start the new process
+                
+                currentProcess = temp;
+                currentProcess->data.is_running = true;
+                waittime = getClk() - currentProcess->data.arrivaltime;
+                
+                logFile = fopen("scheduler.log", "a+");
+                fprintf(logFile, "At time %d process %d started arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
+                fclose(logFile);
+
+                int pid = fork();
+                if (pid == 0)
+                {
+                    char remchar[5];
+                    sprintf(remchar, "%d", currentProcess->data.remainingtime);
+                    char *path[] = {"./process.out", remchar, NULL};
+                    execv(path[0], path);
+                }
+                else
+                {
+                    currentProcess->pid = pid;
+                }
+            }
+            // If we couldn't allocate we send it to the queue again
+            else
+            {
+                insertSorted(&head, temp, 0);
+            }
+        }
+        // If it is has more remaining time than the current running we insert it to the priority queue
+        else
+        {
+            insertSorted(&head, temp, 0);
+        }
+    }
+
+    // If there was no running process we pop the top of the queue and resume/start it
+    if (!RunningFlag && !isEmpty(&head))
+    {
+        struct Node tempnode = pop(&head);
+        currentProcess = newNode(tempnode.data, tempnode.pid, tempnode.allocatedMem, NULL);
+
+        // If it was already sleeping we send continue
+        if (currentProcess->data.is_running == true)
+        {   
+            int waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
+            
+            logFile = fopen("scheduler.log", "a+");
+            fprintf(logFile, "At time %d process %d resumed arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
+            fclose(logFile);
+            
+            kill(currentProcess->pid, SIGCONT);
+            RunningFlag = true;
+        }
+        // Else we fork and start it
+        else
+        {
+
+            pair* allocatedMem = currentProcess->allocatedMem;
+                if (allocatedMem == NULL) allocatedMem = allocate(currentProcess->data.memsize);
+
+            // If we can allocte the process we fork it
+            if(allocatedMem != NULL)
+            {
+                //printf("At time %d allocated %d bytes for process %d from %d to %d\n", getClk(), currentProcess->data.memsize, currentProcess->data.id, allocatedMem->start, allocatedMem->end);
+                logFile = fopen("memory.log", "a+");
+                fprintf(logFile,"At time %d allocated %d bytes for process %d from %d to %d\n", getClk(), currentProcess->data.memsize, currentProcess->data.id, allocatedMem->start, allocatedMem->end);
+                fclose(logFile);
+                currentProcess->data.is_running = true;
+                currentProcess->allocatedMem = allocatedMem;
+                int waittime = getClk() - currentProcess->data.arrivaltime;
+                
+                logFile = fopen("scheduler.log", "a+");
+                fprintf(logFile, "At time %d process %d started arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
+                fclose(logFile);
+                
+                int pid = fork();
+                if (pid == 0)
+                {
+                    char remchar[5];
+                    sprintf(remchar, "%d", currentProcess->data.remainingtime);
+                    char *path[] = {"./process.out", remchar, NULL};
+                    execv(path[0], path);
+                }
+                else
+                {
+                    currentProcess->pid = pid;
+                }
+                RunningFlag = true;
+            }
+            // Else we send it back to the queue and take the next one 
+            else
+            {
+                insertSorted(&waitingHead,currentProcess,0);
+            }
+        }
+
+    }
+
+}
+
+
+// Round Robin Mode
+void Round_Robin() {
+    /* receive the messages from the process_generator */
+    rec_val = msgrcv(msgq_id, &message, sizeof(message.data), processMessagetype, IPC_NOWAIT);
+
+    // if we recieve a message
+    if (rec_val != -1)
+    {
+        
+        Node *temp = newNode(message.data, -1, NULL, NULL);
+        push(&head, &tail, temp);
+        
+    }
+
+    // If there is no running process or the quantem is over
+    if (!RunningFlag || timePassed == quantum)
+    {
+
+        if (!isEmpty(&head))
+        {
+            usleep(10); // Because when the remaining time in the process reaches zero the running flag is set to false
+                    // and the current process is set to null But the scheduler is faster so it enters the if condition first
+                    // with running flag set to true and after it enters the handler then is called and sets the current process
+                    // to Null and the program crashes so we have to wait here until the process finishes first
+            
+            // If there was running process we stop it
+            if (RunningFlag)
+            {
+                kill(currentProcess->pid, SIGUSR1);
+                int waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
+                
+                logFile = fopen("scheduler.log", "a+");
+                fprintf(logFile, "At time %d process %d stopped arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
+                fclose(logFile);
+
+                Node *temp = newNode(currentProcess->data, currentProcess->pid, currentProcess->allocatedMem, NULL);
+                push(&head, &tail, temp);
+
+                RunningFlag = false;
+            }
+
+            // loop over the processes until we can allocate one
+            while (1)
+            {
+                // We pop the process that is going to take its turn from the queue
+                struct Node tempnode = pop(&head);
+                if (isEmpty(&head))
+                    tail = NULL;
+                currentProcess = newNode(tempnode.data, tempnode.pid, tempnode.allocatedMem, NULL);
+                
+                // If the process was running we send a continue signal
+                if (currentProcess->data.is_running == true)
+                {
+                    int waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
+                    
+                    logFile = fopen("scheduler.log", "a+");
+                    fprintf(logFile, "At time %d process %d resumed arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
+                    fclose(logFile);
+                    
+                    kill(currentProcess->pid, SIGCONT);
+
+                    RunningFlag = true;
+                    break;
+                }
+                // Else we fork it and send it its parameters
+                else
+                {
+                    pair* allocatedMem;
+                    // Check if it's already allocated when another process finished its work
+                    if (currentProcess->allocatedMem == NULL)
+                    {
+                        allocatedMem = allocate(currentProcess->data.memsize);
+                    }
+                    else
+                    {
+                        allocatedMem = currentProcess->allocatedMem;
+                    }
+                    
+                    // If there was an allocation we fork and send its parameters
+                    if(allocatedMem != NULL)
+                    {
+                        currentProcess->data.is_running = true;
+                        currentProcess->allocatedMem = allocatedMem;
+                        int waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
+                        
+                        logFile = fopen("scheduler.log", "a+");
+                        fprintf(logFile, "At time %d process %d started arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
+                        fclose(logFile);
+
+                        logFile = fopen("memory.log", "a+");
+                        fprintf(logFile,"At time %d allocated %d bytes for process %d from %d to %d\n", getClk(), currentProcess->data.memsize, currentProcess->data.id, allocatedMem->start, allocatedMem->end);
+                        fclose(logFile);
+                
+                        
+                        int pid = fork();
+                        if (pid == 0)
+                        {
+                            char remchar[5];
+                            sprintf(remchar, "%d", currentProcess->data.remainingtime);
+                            char *path[] = {"./process.out", remchar, NULL};
+                            execv(path[0], path);
+                        }
+                        else
+                        {
+                            currentProcess->pid = pid;
+                            RunningFlag = true;
+                            break;
+                        }
+                    }
+                    // If no allocation was possible we add it to the waiting queue and we continue to the next process
+                    else
+                    {
+                        printf("Sorry there is no enough space to allocate\n");
+                        
+                        Node *temp = newNode(currentProcess->data, -1, NULL, NULL);
+                        push(&waitingHead, &waitingTail, temp);
+                    }
+                }
+            }
+            timePassed = 0;
+        }
+    }
+
+}
+
+
 
 /**********************************************************MAIN************************************************************************************/
 
@@ -223,19 +450,16 @@ int main(int argc, char *argv[])
     * 
     */
 
+
     mode = atoi(argv[1]);
-    int quantum = atoi(argv[2]);
-    struct msgbuff message;
-    msgrembuff msgrem,msgrem2;
-    int rec_val, rem_time;
-    int clk = getClk();
-    int clk2 = getClk();
+    quantum = atoi(argv[2]);
+    current_Clk = getClk();
 
     while (1)
     {
         // Calculate the current clock
         int now = getClk();
-        if ((now - clk2) == 1)
+        if ((now - current_Clk) == 1)
         {
             if (currentProcess != NULL)
             {
@@ -261,7 +485,7 @@ int main(int argc, char *argv[])
             {
                 idleTime ++;
             }
-            clk2 = now;
+            current_Clk = now;
             timePassed++;
         }
 
@@ -270,49 +494,7 @@ int main(int argc, char *argv[])
         ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
         if (mode == 1)
         {
-            /* receive the messages from the process_generator */
-            rec_val = msgrcv(msgq_id, &message, sizeof(message.data), processMessagetype, IPC_NOWAIT);
-
-            // if we recieve a message
-            if (rec_val != -1)
-            { 
-                Node *temp = newNode(message.data, -1, NULL, NULL);
-                insertSorted(&head, temp, 1);
-                
-            }
-
-            if (!RunningFlag && !isEmpty(&head))
-            {    
-                struct Node tempnode = pop(&head);
-                currentProcess = newNode(tempnode.data,tempnode.pid, NULL, NULL);
-                int waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
-
-                //Memory Allocation
-                pair* allocatedMem = allocate(currentProcess->data.memsize);
-                currentProcess->allocatedMem = allocatedMem;
-                //printf("At time %d allocated %d bytes for process %d from %d to %d\n", getClk(), message.data.memsize, message.data.id, allocatedMem->start, allocatedMem->end);
-                logFile = fopen("memory.log", "a+");
-                fprintf(logFile,"At time %d allocated %d bytes for process %d from %d to %d\n", getClk(), message.data.memsize, message.data.id, allocatedMem->start, allocatedMem->end);
-                fclose(logFile);
-                
-                logFile = fopen("scheduler.log", "a+");
-                fprintf(logFile, "At time %d process %d started arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
-                fclose(logFile);
-
-                int pid = fork();
-                if (pid == 0)
-                {
-                    char remchar[5];
-                    sprintf(remchar, "%d", currentProcess->data.remainingtime);
-                    char *path[] = {"./process.out", remchar, NULL};
-                    execv(path[0], path);
-                }
-                else
-                {
-                    currentProcess->pid = pid;
-                }
-                RunningFlag = true;
-            }
+            Highest_Priority_first();
         }
 
         ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -320,123 +502,7 @@ int main(int argc, char *argv[])
         ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
         else if (mode == 2)
         {
-            /* receive the messages from the process_generator */
-            rec_val = msgrcv(msgq_id, &message, sizeof(message.data), processMessagetype, IPC_NOWAIT);
-
-            // if we recieve a message
-            if (rec_val != -1)
-            {
-                Node *temp = newNode(message.data, -1, NULL, NULL);
-                
-
-                // We compare the head to the current process if the head has lower time we switch
-                if (currentProcess!=NULL && temp->data.remainingtime < currentProcess->data.remainingtime)
-                {
-                    pair* allocatedMem = allocate(temp->data.memsize);
-                    if(allocatedMem != NULL)
-                    {   temp->allocatedMem = allocatedMem;
-                        //printf("At time %d allocated %d bytes for process %d from %d to %d\n", getClk(), head->data.memsize, head->data.id, allocatedMem->start, allocatedMem->end);
-                        logFile = fopen("memory.log", "a+");
-                        fprintf(logFile,"At time %d allocated %d bytes for process %d from %d to %d\n", getClk(), temp->data.memsize, temp->data.id, allocatedMem->start, allocatedMem->end);
-                        fclose(logFile);
-
-                        // Send to the current to sleep
-                        kill(currentProcess->pid, SIGUSR1);
-                        int waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
-                        
-                        logFile = fopen("scheduler.log", "a+");
-                        fprintf(logFile, "At time %d process %d stopped arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
-                        fclose(logFile);
-                        
-                        Node *temp2 = newNode(currentProcess->data,currentProcess->pid, currentProcess->allocatedMem, NULL);
-                        
-                        insertSorted(&head, temp2, 0);
-
-                        // Start the new process
-                        
-                        currentProcess = temp;
-                        currentProcess->data.is_running = true;
-                        waittime = getClk() - currentProcess->data.arrivaltime;
-                        
-                        logFile = fopen("scheduler.log", "a+");
-                        fprintf(logFile, "At time %d process %d started arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
-                        fclose(logFile);
-
-                        int pid = fork();
-                        if (pid == 0)
-                        {
-                            char remchar[5];
-                            sprintf(remchar, "%d", currentProcess->data.remainingtime);
-                            char *path[] = {"./process.out", remchar, NULL};
-                            execv(path[0], path);
-                        }
-                        else
-                        {
-                            currentProcess->pid = pid;
-                        }
-                    }else{
-                        insertSorted(&head, temp, 0);
-                    }
-                }else
-                {
-                    insertSorted(&head, temp, 0);
-                }
-            }
-
-            if (!RunningFlag && !isEmpty(&head))
-            {
-                struct Node tempnode = pop(&head);
-                currentProcess = newNode(tempnode.data, tempnode.pid, tempnode.allocatedMem, NULL);
-                
-                if (currentProcess->data.is_running == true)
-                {   
-                    int waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
-                    
-                    logFile = fopen("scheduler.log", "a+");
-                    fprintf(logFile, "At time %d process %d resumed arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
-                    fclose(logFile);
-                    
-                    kill(currentProcess->pid, SIGCONT);
-                    RunningFlag = true;
-                }
-                else
-                {
-
-                    pair* allocatedMem = currentProcess->allocatedMem;
-                     if (allocatedMem == NULL) allocatedMem = allocate(currentProcess->data.memsize);
-                    if(allocatedMem != NULL)
-                    {
-                        //printf("At time %d allocated %d bytes for process %d from %d to %d\n", getClk(), currentProcess->data.memsize, currentProcess->data.id, allocatedMem->start, allocatedMem->end);
-                        logFile = fopen("memory.log", "a+");
-                        fprintf(logFile,"At time %d allocated %d bytes for process %d from %d to %d\n", getClk(), currentProcess->data.memsize, currentProcess->data.id, allocatedMem->start, allocatedMem->end);
-                        fclose(logFile);
-                        currentProcess->data.is_running = true;
-                        currentProcess->allocatedMem = allocatedMem;
-                        int waittime = getClk() - currentProcess->data.arrivaltime;
-                        
-                        logFile = fopen("scheduler.log", "a+");
-                        fprintf(logFile, "At time %d process %d started arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
-                        fclose(logFile);
-                        
-                        int pid = fork();
-                        if (pid == 0)
-                        {
-                            char remchar[5];
-                            sprintf(remchar, "%d", currentProcess->data.remainingtime);
-                            char *path[] = {"./process.out", remchar, NULL};
-                            execv(path[0], path);
-                        }
-                        else
-                        {
-                            currentProcess->pid = pid;
-                        }
-                        RunningFlag = true;
-                    }else{
-                        insertSorted(&waitingHead,currentProcess,0);
-                    }
-                }
-
-            }
+            Shortest_Runtime_Next();
         }
 
         ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -444,388 +510,10 @@ int main(int argc, char *argv[])
         ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
         else
         {
-            /* receive the messages from the process_generator */
-            rec_val = msgrcv(msgq_id, &message, sizeof(message.data), processMessagetype, IPC_NOWAIT);
-
-            // if we recieve a message
-            if (rec_val != -1)
-            {
-                
-                Node *temp = newNode(message.data, -1, NULL, NULL);
-                push(&head, &tail, temp);
-                
-            }
-
-            if (!RunningFlag || timePassed == quantum)
-            {
-
-                if (!isEmpty(&head))
-                {
-                    usleep(10); // Because when the remaining time in the process reaches zero the running flag is set to false
-                            // and the current process is set to null But the scheduler is faster so it enters the if condition first
-                            // with running flag set to true and after it enters the handler then is called and sets the current process
-                            // to Null and the program crashes so we have to wait here until the process finishes first
-                    if (RunningFlag)
-                    {
-                        kill(currentProcess->pid, SIGUSR1);
-                        int waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
-                        
-                        logFile = fopen("scheduler.log", "a+");
-                        fprintf(logFile, "At time %d process %d stopped arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
-                        fclose(logFile);
-
-                        Node *temp = newNode(currentProcess->data, currentProcess->pid, currentProcess->allocatedMem, NULL);
-                        push(&head, &tail, temp);
-
-                        RunningFlag = false;
-                    }
-
-                    while (1)
-                    {
-                        struct Node tempnode = pop(&head);
-                        if (isEmpty(&head))
-                            tail = NULL;
-                        currentProcess = newNode(tempnode.data, tempnode.pid, tempnode.allocatedMem, NULL);
-                        
-                        if (currentProcess->data.is_running == true)
-                        {
-                            int waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
-                            
-                            logFile = fopen("scheduler.log", "a+");
-                            fprintf(logFile, "At time %d process %d resumed arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
-                            fclose(logFile);
-                            
-                            kill(currentProcess->pid, SIGCONT);
-
-                            RunningFlag = true;
-                            break;
-                        }
-                        else
-                        {
-                            pair* allocatedMem;
-                            // Check if it's already allocated when another process finished its work and then we checked the 
-                            if (currentProcess->allocatedMem == NULL)
-                            {
-                                allocatedMem = allocate(currentProcess->data.memsize);
-                            }
-                            else
-                            {
-                                allocatedMem = currentProcess->allocatedMem;
-                            }
-                            
-                            if(allocatedMem != NULL)
-                            {
-                                currentProcess->data.is_running = true;
-                                currentProcess->allocatedMem = allocatedMem;
-                                int waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
-                                
-                                logFile = fopen("scheduler.log", "a+");
-                                fprintf(logFile, "At time %d process %d started arr %d total %d remain %d wait %d\n",getClk(),currentProcess->data.id,currentProcess->data.arrivaltime,currentProcess->data.runningtime,currentProcess->data.remainingtime,waittime);
-                                fclose(logFile);
-
-                                //printf("At time %d allocated %d bytes for process %d from %d to %d\n", getClk(), currentProcess->data.memsize, currentProcess->data.id, allocatedMem->start, allocatedMem->end);
-                                logFile = fopen("memory.log", "a+");
-                                fprintf(logFile,"At time %d allocated %d bytes for process %d from %d to %d\n", getClk(), currentProcess->data.memsize, currentProcess->data.id, allocatedMem->start, allocatedMem->end);
-                                fclose(logFile);
-                        
-                                
-                                int pid = fork();
-                                if (pid == 0)
-                                {
-                                    char remchar[5];
-                                    sprintf(remchar, "%d", currentProcess->data.remainingtime);
-                                    char *path[] = {"./process.out", remchar, NULL};
-                                    execv(path[0], path);
-                                }
-                                else
-                                {
-                                    currentProcess->pid = pid;
-                                    RunningFlag = true;
-                                    break;
-                                }
-                            }
-                            else
-                            {
-                                printf("Sorry there is no enough space to allocate\n");
-                                
-                                Node *temp = newNode(currentProcess->data, -1, NULL, NULL);
-                                push(&waitingHead, &waitingTail, temp);
-                            }
-                        }
-                    }
-                    timePassed = 0;
-                }
-            }
+            Round_Robin();
         }
     }
 
     //upon termination release the clock resources.
     destroyClk(true);
-}
-
-
-void TerminateSched () {
-    float avgWT = (float)totalWT / numberOfTotalProc;
-    
-    //Calc Standard deviation
-    float sum = 0.0, mean, SD = 0.0;
-    int i;
-    for (i = 0; i < numberOfTotalProc; ++i) {
-        sum += WTAnums[i];
-    }
-    mean = sum / numberOfTotalProc;
-
-    for (i = 0; i < numberOfTotalProc; ++i)
-        SD += (WTAnums[i] - mean) * (WTAnums[i] - mean);
-    SD = sqrt(SD/numberOfTotalProc);
-
-    int totalTime = getClk();
-    float cpuUtilization = 100.0 * (totalTime - idleTime) / totalTime;
-
-    FILE* prefFile;
-    prefFile = fopen("scheduler.perf", "w+"); 
-    fprintf(prefFile, "CPU utilization = %.2f%% \nAvg WTA = %.2f \nAvg Waiting = %.2f \nStd WTA = %.2f \n",cpuUtilization,mean,avgWT,SD);
-    fclose(prefFile);
-
-    kill(getppid(),SIGINT);
-    exit(0);
-}
-
-// Clear all resources in case of interruption
-void clearResources(int signum)
-{
-    for(int i=0; i<11; i++){
-        while(freeList[i] != NULL){
-            pair *temp = popPair(&freeList[i]);
-            free(temp);
-            temp = NULL;
-        }
-    }
-    
-    msgctl(msgq_id2 , IPC_RMID, (struct msqid_ds *) 0);
-    msgctl(msgq_id3 , IPC_RMID, (struct msqid_ds *) 0);
-    exit(0);
-}
-
-///////////////////////////////////////////////////////////////////
-//////////////// Buddy system allocation Functions ////////////////
-///////////////////////////////////////////////////////////////////
-
-pair* newPair(int start, int end){
-    pair *newP = (pair *)malloc(sizeof(pair));
-    newP->start = start;
-    newP->end = end;
-    newP->next = NULL;
-    return newP;
-}
-
-void pushPair(pair **listHead, pair * newPair){
-
-    newPair->next = NULL;
-
-    if(*listHead == NULL){
-        *listHead = newPair;
-    }else{
-        pair* temp = *listHead;
-        while (temp->next != NULL)
-        {
-            temp = temp->next;
-        }
-        
-        temp->next = newPair;
-    }
-}
-
-pair* popPair(pair **listHead){
-    pair *popped;
-    if(listHead != NULL){
-        popped = *listHead;
-        *listHead = (*listHead)->next;
-    }else
-    {
-        popped = NULL;
-    }
-    return popped;
-}
-
-void clearFreeList(){
-    for (int i = 0; i<11; i++){
-        freeList[i] = NULL;
-    }
-    pair *newP = newPair(0,1023);
-    
-    pushPair(&freeList[10],newP);
-}
-
-pair* allocate(int memsize){
-    int power = (int) ceil(log2(memsize));
-
-    if(freeList[power] != NULL)
-    {
-        return popPair(&freeList[power]);
-    }
-    int i;
-    for (i=power; i<11; i++)
-    {
-        if(freeList[i] != NULL)
-            break;
-    }
-
-    if(i == 11){
-        return NULL;
-    }
-    pair *temp = popPair(&freeList[i]);
-    i--;
-    for(; i>=power; i--)
-    {
-        pair *firstPair = newPair(temp->start, temp->start + (temp->end - temp->start)/2);
-        pair *secondPair = newPair(temp->start + (temp->end - temp->start + 1)/2, temp->end);
-        free(temp);
-        pushPair(&freeList[i], secondPair);
-        temp = firstPair;
-    }
-    return temp;
-}
-
-
-void deallocate(pair* freePair) 
-{
-    // Size of block to be searched 
-    int n = (int) ceil(log2(freePair->end-freePair->start));
-    int i, buddyNumber, buddyAddress; 
-
-    //printf("At time %d freed %d bytes for process %d from %d to %d\n",getClk(),currentProcess->data.memsize,currentProcess->data.id,freePair->start,freePair->end);
-    logFile = fopen("memory.log", "a+");
-    fprintf(logFile,"At time %d freed %d bytes for process %d from %d to %d\n",getClk(),currentProcess->data.memsize,currentProcess->data.id,freePair->start,freePair->end);
-    fclose(logFile);
-    
-    pushPair(&freeList[n], freePair);
-
-    bool flag;
-    pair* newValue = freePair;
-    
-    for (int i = n; i < 11; i++)
-    {
-        flag = true;
-        freePair = newValue;
-        // Calculate buddy number 
-        buddyNumber = freePair->start / (freePair->end-freePair->start+1) ;  
-        if (buddyNumber % 2 != 0) 
-            buddyAddress = freePair->start - pow(2, i); 
-        else
-            buddyAddress = freePair->start + pow(2, i); 
-
-        
-        pair* temp = freeList[i];
-        while( temp!=NULL )  
-        { 
-            // If buddy found and is also free 
-            if (temp->start == buddyAddress)  
-            { 
-                flag = false;
-                
-                // Merge the buddies 
-                if (buddyNumber % 2 == 0) 
-                { 
-                    pair* nPair = newPair(freePair->start, freePair->start + (pow(2, i+1) - 1 ) );
-                    pushPair(&freeList[i + 1], nPair); 
-                    // printf("Merged Memory from %d to %d\n",nPair->start,nPair->end);
-                    newValue = nPair;
-                } 
-                else
-                { 
-                    pair* nPair = newPair(buddyAddress, buddyAddress + (pow(2, i+1) - 1)); 
-                    pushPair(&freeList[i + 1], nPair); 
-                    // printf("Merged Memory from %d to %d\n",nPair->start,nPair->end);
-                    newValue = nPair;
-                } 
-                
-                //Erase the Allocated memory Find the parent to set next with NULL
-                pair* parentOfTemp = freeList[i];
-                while (parentOfTemp->next != freePair)
-                {
-                    parentOfTemp = parentOfTemp->next;
-                }
-                parentOfTemp->next = freePair->next;
-                free(freePair);
-                freePair = NULL;
-
-                // Find the parent of the buddy to remove correctly by merging it
-
-                parentOfTemp = freeList[i];
-                if (parentOfTemp != temp)
-                {
-                    while (parentOfTemp->next != temp)
-                    {
-                        parentOfTemp = parentOfTemp->next;
-                    }
-                    
-                    // Merge the parent of temp with the next of temp and Erase temp
-                    parentOfTemp->next = temp->next;
-                    free(temp);
-                    temp = NULL;
-                    break; 
-                }
-                else
-                {
-                    freeList[i] = temp->next;
-                    free(temp);
-                    temp = NULL;
-                    break;
-                }
-                
-                
-            }
-            temp = temp->next;
-        }
-        if (flag == true) break;
-    }    
-}
-
-void tryToAllocate(){
-    
-    // SRTN
-    if(mode == 2) 
-    {
-        if (!isEmpty(&waitingHead))
-        {
-            if(isEmpty(&head) || waitingHead->data.remainingtime < head->data.remainingtime)
-            {
-                pair* allocatedMem = allocate(waitingHead->data.memsize);
-                if (allocatedMem != NULL)
-                {
-                    //pop from waiting list
-                    struct Node tempnode = pop(&waitingHead);
-                    if (isEmpty(&waitingHead))
-                        waitingTail = NULL;
-
-                    //push to regular Queue
-                    Node *temp = newNode(tempnode.data, tempnode.pid, allocatedMem, NULL);
-                    insertSorted(&head, temp, 0);
-                }  
-            } 
-        }
-    }
-
-    //Round robin
-    else if(mode == 3) 
-    {
-        while (!isEmpty(&waitingHead))
-        {
-            pair* allocatedMem = allocate(waitingHead->data.memsize);
-            if (allocatedMem != NULL)
-            {
-                //pop from waiting list
-                struct Node tempnode = pop(&waitingHead);
-                if (isEmpty(&waitingHead))
-                    waitingTail = NULL;
-
-                //push to regular list
-                Node *temp = newNode(tempnode.data, tempnode.pid, allocatedMem, NULL);
-                push(&head, &tail, temp);
-            }else{
-                break;
-            } 
-        }
-    }  
 }
