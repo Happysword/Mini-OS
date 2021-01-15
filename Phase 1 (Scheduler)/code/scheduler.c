@@ -146,7 +146,7 @@ void Shortest_Runtime_Next() {
         if (currentProcess!=NULL && head->data.remainingtime < currentProcess->data.remainingtime)
         {
             // Send to the current to sleep
-            kill(currentProcess->pid, SIGUSR1);
+            kill(currentProcess->pid, SIGSTOP);
             int waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
             
             logFile = fopen("scheduler.log", "a+");
@@ -256,7 +256,7 @@ void Round_Robin() {
             // If there was running process we stop it
             if (RunningFlag)
             {
-                kill(currentProcess->pid, SIGUSR1);
+                kill(currentProcess->pid, SIGSTOP);
                 int waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
                 
                 logFile = fopen("scheduler.log", "a+");

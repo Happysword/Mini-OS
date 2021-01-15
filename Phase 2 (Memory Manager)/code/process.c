@@ -6,12 +6,6 @@ int remainingtime;
 int msgq_id, msgq_id2;
 bool sleep_flag = false;
 
-//void handlerTermination(int sigNum);
-void handlerSleep(int sigNum);
-void handlerWake(int signum);
-
-//Clock variables
-int clk, now;
 
 int main(int agrc, char * argv[])
 {
@@ -32,15 +26,12 @@ int main(int agrc, char * argv[])
         exit(-1);
     }
 
-    signal(SIGUSR1,handlerSleep);
-    signal(SIGUSR2,handlerWake);
     //TODO it needs to get the remaining time from somewhere
     msgrembuff msg2;
     msgrembuff confirmation;
     
 
     remainingtime = atoi(argv[1]);
-    clk = getClk(); 
     
     while (remainingtime > 0)
     {
@@ -62,17 +53,4 @@ int main(int agrc, char * argv[])
     destroyClk(false);
     
     return 0;
-}
-
-void handlerSleep(int sigNum){
-    raise(SIGSTOP);
-    //printf("Awaked\n");
-    clk = getClk();
-}
-
-void handlerWake(int signum)
-{
-    sleep_flag = false;
-    clk = getClk();
-    // printf("inside wake hanlder\n");
 }
