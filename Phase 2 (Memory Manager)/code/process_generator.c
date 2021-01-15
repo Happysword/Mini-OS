@@ -16,7 +16,7 @@ int main(int argc, char *argv[])
     FILE *pFile;
     pFile = fopen(fileName, "r");
     
-    processWrapper *prev;
+    processWrapper *prev = NULL;
 
     char line[256];
     long unsigned int size = 256;
@@ -45,6 +45,10 @@ int main(int argc, char *argv[])
         }
         flag = 0;
         numberOfProcesses++;
+    }
+    if(prev == NULL){
+        printf("Number of processes equal 0\nEnter valid Number of Processes\n");
+        return 0;
     }
     prev->next = NULL;
     fclose(pFile);
