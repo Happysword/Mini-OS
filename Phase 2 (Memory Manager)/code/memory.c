@@ -3,7 +3,7 @@
 #include <math.h>
 
 // Global Variables
-int timePassed = 0, idleTime = 0;
+int timePassed = 0, runTime = 0;
 int numberOfTotalProc, numberOfFinishedProc = 0;
 int totalWT = 0;
 int msgq_id, msgq_id2, msgq_id3;

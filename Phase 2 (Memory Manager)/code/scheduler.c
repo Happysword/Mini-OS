@@ -18,7 +18,7 @@ void TerminateSched () {
     SD = sqrt(SD/numberOfTotalProc);
 
     int totalTime = getClk();
-    float cpuUtilization = 100.0 * (totalTime - idleTime) / totalTime;
+    float cpuUtilization = 100.0 * runTime / totalTime;
 
     FILE* prefFile;
     prefFile = fopen("scheduler.perf", "w+"); 
@@ -52,7 +52,8 @@ void handlerChildTermination(int sigNum)
     // Calculate the wait time from what we have
     int waittime = getClk() - currentProcess->data.arrivaltime - ( currentProcess->data.runningtime - currentProcess->data.remainingtime ) ;
     int tatime = getClk() - currentProcess->data.arrivaltime;
-    
+    runTime += currentProcess->data.runningtime;
+
     float wtatime = (float)tatime / currentProcess->data.runningtime;
     if (currentProcess->data.runningtime == 0) wtatime = 0;
     
@@ -73,12 +74,12 @@ void handlerChildTermination(int sigNum)
     numberOfFinishedProc++;
     totalWT += waittime;
     WTAnums[currentProcess->data.id - 1] = wtatime;
-    if(numberOfFinishedProc == numberOfTotalProc) TerminateSched();
 
     //Free the process
     free(currentProcess);
     currentProcess = NULL;
 
+    if(numberOfFinishedProc == numberOfTotalProc) TerminateSched();
 }
 
 
@@ -263,6 +264,7 @@ void Shortest_Runtime_Next() {
             // Else we send it back to the queue and take the next one 
             else
             {
+                printf("Sorry there is no enough space to allocate\n");
                 insertSorted(&waitingHead,currentProcess,0);
             }
         }
@@ -481,9 +483,6 @@ int main(int argc, char *argv[])
                     msgrcv(msgq_id3, &msgrem2, sizeof(msgrem2.data), 1, !IPC_NOWAIT);
                 }
 
-            }else
-            {
-                idleTime ++;
             }
             current_Clk = now;
             timePassed++;
